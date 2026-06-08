@@ -6,14 +6,67 @@
 #   - ens34: DHCP (WAN - VM Network, Internet real)
 #   - ens35: Estática 10.250.20.1/24 (LAN - ENG-VM NETWORK)
 #
-# IMPORTANTE:
-#   - NO asignar IP estática a ens34 (es la vía de acceso a la VM)
-#   - NO asignar gateway a ens35
-#   - La ruta por defecto debe salir SOLO por ens34
+# ESTRATEGIA check_mode:
+#   - PRECHECKS (estado antes del cambio): check_mode: false — siempre corren,
+#     leen estado real del sistema sin modificar nada.
+#   - CAMBIOS (template, apply): respetan check_mode normal.
+#   - POSTCHECKS (estado esperado tras el cambio): when: not ansible_check_mode
+#     Solo se ejecutan en una aplicación real, no en --check.
+#
+# Esto garantiza que --check --diff termina sin error y muestra qué cambiaría.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# PASO 1: Crear directorio de backup y guardar configuración actual
+# PRECHECK-1: Verificar que WAN (ens34) tiene IPv4 ANTES de cualquier cambio
+# Esto protege de perder acceso: si ens34 no tiene IP ahora, abortar.
+# check_mode: false → se ejecuta incluso con --check (solo lectura, sin riesgo)
+# -----------------------------------------------------------------------------
+- name: "NETPLAN | Precheck - Verificar IPv4 actual en WAN ({{ wan_interface }})"
+  ansible.builtin.command:
+    cmd: "ip -4 -o addr show dev {{ wan_interface }} scope global"
+  register: wan_ipv4_precheck
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags:
+    - netplan
+    - precheck
+
+- name: "NETPLAN | Assert - WAN tiene IPv4 antes de aplicar cambios"
+  ansible.builtin.assert:
+    that:
+      - wan_ipv4_precheck.rc == 0
+      - wan_ipv4_precheck.stdout | length > 0
+    fail_msg: >
+      ERROR CRÍTICO: {{ wan_interface }} NO tiene IPv4 activa ANTES del cambio.
+      Esto indicaría que ya perdiste conectividad DHCP.
+      No se continúa para evitar quedar sin acceso.
+      Verifica la conexión a VM Network en ESXi.
+    success_msg: >
+      OK: {{ wan_interface }} tiene IPv4 activa antes del cambio:
+      {{ wan_ipv4_precheck.stdout | regex_replace('\s+', ' ') }}
+  tags:
+    - netplan
+    - precheck
+
+# -----------------------------------------------------------------------------
+# PRECHECK-2: Listar archivos Netplan existentes (informativo, sin cambios)
+# -----------------------------------------------------------------------------
+- name: "NETPLAN | Precheck - Buscar archivos Netplan existentes"
+  ansible.builtin.find:
+    paths: /etc/netplan
+    patterns: "*.yaml,*.yml"
+  register: netplan_files_found
+  tags: netplan
+
+- name: "NETPLAN | Precheck - Listar archivos Netplan encontrados"
+  ansible.builtin.debug:
+    msg: "Archivos Netplan actuales: {{ netplan_files_found.files | map(attribute='path') | list }}"
+  tags: netplan
+
+# -----------------------------------------------------------------------------
+# PASO 1: Crear directorio de backup
+# (el módulo file es seguro en check_mode: solo reporta qué crearía)
 # -----------------------------------------------------------------------------
 - name: "NETPLAN | Crear directorio de backups para Netplan"
   ansible.builtin.file:
@@ -24,12 +77,17 @@
     mode: "0700"
   tags: netplan
 
+# -----------------------------------------------------------------------------
+# PASO 2: Backup de archivos Netplan actuales
+# check_mode: false → el backup debe ocurrir siempre, incluso en --check,
+# porque es idempotente (copia sin borrar) y no afecta la red.
+# -----------------------------------------------------------------------------
 - name: "NETPLAN | Registrar timestamp para el backup"
   ansible.builtin.set_fact:
     backup_timestamp: "{{ ansible_facts['date_time']['epoch'] }}"
   tags: netplan
 
-- name: "NETPLAN | Backup de todos los archivos Netplan actuales"
+- name: "NETPLAN | Backup de archivos Netplan actuales"
   ansible.builtin.shell: |
     if ls /etc/netplan/*.yaml /etc/netplan/*.yml 2>/dev/null | head -1; then
       cp -v /etc/netplan/*.yaml {{ backup_dir }}/netplan/ 2>/dev/null || true
@@ -40,35 +98,17 @@
     fi
   register: netplan_backup_result
   changed_when: false
+  check_mode: false
   tags: netplan
 
-- name: "NETPLAN | Mostrar resultado del backup"
+- name: "NETPLAN | Resultado del backup"
   ansible.builtin.debug:
     msg: "{{ netplan_backup_result.stdout_lines }}"
   tags: netplan
 
 # -----------------------------------------------------------------------------
-# PASO 2: Detectar configuraciones Netplan existentes que puedan conflictuar
-# -----------------------------------------------------------------------------
-- name: "NETPLAN | Buscar archivos Netplan existentes que configuren ens34 o ens35"
-  ansible.builtin.find:
-    paths: /etc/netplan
-    patterns: "*.yaml,*.yml"
-  register: netplan_files_found
-  tags: netplan
-
-- name: "NETPLAN | Listar archivos Netplan encontrados"
-  ansible.builtin.debug:
-    msg: "Archivos Netplan encontrados: {{ netplan_files_found.files | map(attribute='path') | list }}"
-  tags: netplan
-
-# NOTA DE DISEÑO: No eliminamos archivos Netplan existentes automáticamente
-# porque podría haber configuraciones críticas. El archivo que generamos tiene
-# prioridad 99 (mayor número = mayor prioridad en Netplan).
-# Si hay conflictos, revisar manualmente los archivos con número menor.
-
-# -----------------------------------------------------------------------------
 # PASO 3: Generar la nueva configuración Netplan desde template
+# En --check: muestra el diff del archivo pero NO lo aplica en disco.
 # -----------------------------------------------------------------------------
 - name: "NETPLAN | Generar configuración Netplan desde template Jinja2"
   ansible.builtin.template:
@@ -78,20 +118,20 @@
     group: root
     mode: "0600"
     backup: true
-    # NOTA: No se usa 'validate' aquí. netplan generate opera sobre /etc/netplan/
-    # completo, no sobre un archivo temporal individual. La verificación de
-    # sintaxis se hace con el paso 'netplan generate --debug' posterior.
   notify:
     - "apply netplan"
   tags: netplan
 
 # -----------------------------------------------------------------------------
-# PASO 4: Verificar sintaxis antes de aplicar
+# PASO 4: Verificar sintaxis Netplan
+# Solo tiene sentido si el archivo fue escrito (no en check_mode).
+# En check_mode la plantilla no se escribió, así que saltamos.
 # -----------------------------------------------------------------------------
 - name: "NETPLAN | Verificar sintaxis del archivo Netplan generado"
   ansible.builtin.command: netplan generate --debug
   register: netplan_generate_check
   changed_when: false
+  when: not ansible_check_mode
   tags: netplan
 
 - name: "NETPLAN | Resultado de verificación sintáctica"
@@ -99,72 +139,83 @@
     msg:
       - "Verificación Netplan generate: OK"
       - "{{ netplan_generate_check.stderr_lines | default([]) }}"
+  when: not ansible_check_mode
   tags: netplan
 
 # -----------------------------------------------------------------------------
-# PASO 5: Aplicar Netplan de forma segura
+# PASO 5: Aplicar Netplan (flush handlers)
+# En check_mode los handlers no se ejecutan realmente.
 # -----------------------------------------------------------------------------
-# NOTA DE SEGURIDAD:
-# 'netplan apply' puede interrumpir brevemente la red.
-# El módulo handler lo ejecuta solo cuando hay cambios reales.
-# ens34 (DHCP) debe recuperar IP automáticamente después del apply.
-- name: "NETPLAN | Forzar ejecución de handlers (aplicar netplan ahora)"
+- name: "NETPLAN | Flush handlers - aplicar netplan si hubo cambios"
   ansible.builtin.meta: flush_handlers
   tags: netplan
 
 # -----------------------------------------------------------------------------
-# PASO 6: Esperar que ens34 recupere conectividad (si hubo cambios)
+# POSTCHECKS - Solo se ejecutan en modo real (sin --check)
+# En --check el template no se aplicó, así que no tiene sentido validar
+# el estado de red resultante.
 # -----------------------------------------------------------------------------
-- name: "NETPLAN | Esperar 10 segundos para estabilización de red"
+
+# POSTCHECK: Esperar estabilización de red post-apply
+- name: "NETPLAN | Postcheck - Esperar estabilización de red (10s)"
   ansible.builtin.wait_for:
     timeout: 10
-  tags: netplan
+  when: not ansible_check_mode
+  tags:
+    - netplan
+    - postcheck
 
-# -----------------------------------------------------------------------------
-# PASO 7: Validar que ens34 conserva IP (DHCP)
-# -----------------------------------------------------------------------------
-- name: "NETPLAN | Validar que ens34 tiene IP asignada por DHCP"
-  ansible.builtin.shell: |
-    ip addr show {{ wan_interface }} | grep 'inet ' | awk '{print $2}'
-  register: ens34_ip_post
+# POSTCHECK: Verificar que ens34 conserva IPv4 después del apply
+- name: "NETPLAN | Postcheck - Verificar IPv4 de WAN post-apply"
+  ansible.builtin.command:
+    cmd: "ip -4 -o addr show dev {{ wan_interface }} scope global"
+  register: wan_ipv4_postcheck
   changed_when: false
-  retries: 3
-  delay: 5
-  until: ens34_ip_post.stdout != ""
-  tags: netplan
+  failed_when: false
+  when: not ansible_check_mode
+  tags:
+    - netplan
+    - postcheck
 
-- name: "NETPLAN | Resultado: IP de ens34 post-apply"
+- name: "NETPLAN | Assert - WAN conserva IPv4 después de aplicar Netplan"
   ansible.builtin.assert:
     that:
-      - ens34_ip_post.stdout != ""
+      - wan_ipv4_postcheck.rc == 0
+      - wan_ipv4_postcheck.stdout | length > 0
     fail_msg: >
-      ERROR CRÍTICO: ens34 perdió su IP después de aplicar Netplan.
-      Verificar manualmente: ip addr show ens34
-      El archivo backup está en: {{ backup_dir }}/netplan/
+      ERROR CRÍTICO: {{ wan_interface }} perdió su IP después de aplicar Netplan.
+      Restaurar manualmente desde backup: {{ backup_dir }}/netplan/
+      Luego ejecutar: netplan apply
     success_msg: >
-      OK: ens34 conserva IP: {{ ens34_ip_post.stdout.strip() }}
-  tags: netplan
+      OK: {{ wan_interface }} conserva IPv4 post-apply:
+      {{ wan_ipv4_postcheck.stdout | regex_replace('\s+', ' ') }}
+  when: not ansible_check_mode
+  tags:
+    - netplan
+    - postcheck
 
-# -----------------------------------------------------------------------------
-# PASO 8: Validar que ens35 tiene la IP estática correcta
-# -----------------------------------------------------------------------------
-- name: "NETPLAN | Validar que ens35 tiene 10.250.20.1/24"
-  ansible.builtin.shell: |
-    ip addr show {{ lan_interface }} | grep 'inet ' | awk '{print $2}'
-  register: ens35_ip_post
+# POSTCHECK: Verificar que ens35 tiene la IP estática correcta
+- name: "NETPLAN | Postcheck - Verificar IPv4 de LAN post-apply"
+  ansible.builtin.command:
+    cmd: "ip -4 -o addr show dev {{ lan_interface }} scope global"
+  register: lan_ipv4_postcheck
   changed_when: false
-  retries: 3
-  delay: 3
-  until: ens35_ip_post.stdout != ""
-  tags: netplan
+  failed_when: false
+  when: not ansible_check_mode
+  tags:
+    - netplan
+    - postcheck
 
-- name: "NETPLAN | Resultado: IP de ens35 post-apply"
+- name: "NETPLAN | Assert - LAN tiene IP estática esperada"
   ansible.builtin.assert:
     that:
-      - lan_ip + '/' + lan_prefix | string in ens35_ip_post.stdout
+      - lan_ipv4_postcheck.stdout is search(lan_ip | string + '/' + lan_prefix | string)
     fail_msg: >
-      ERROR: ens35 NO tiene {{ lan_ip }}/{{ lan_prefix }}.
-      IP actual: {{ ens35_ip_post.stdout }}
+      ERROR: {{ lan_interface }} NO tiene {{ lan_ip }}/{{ lan_prefix }} post-apply.
+      Salida actual: {{ lan_ipv4_postcheck.stdout }}
     success_msg: >
-      OK: ens35 configurada correctamente con {{ ens35_ip_post.stdout.strip() }}
-  tags: netplan
+      OK: {{ lan_interface }} configurada con {{ lan_ip }}/{{ lan_prefix }}
+  when: not ansible_check_mode
+  tags:
+    - netplan
+    - postcheck

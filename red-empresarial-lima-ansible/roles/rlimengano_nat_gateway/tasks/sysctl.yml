@@ -7,10 +7,18 @@
 #
 # El forwarding permite que los paquetes de 10.250.20.0/24 (ens35)
 # puedan ser enrutados hacia Internet por ens34.
+#
+# ESTRATEGIA check_mode:
+#   - El módulo ansible.posix.sysctl respeta check_mode normalmente
+#     (muestra qué cambiaría sin aplicar).
+#   - La verificación post-cambio (assert ip_forward = 1) y el cat del archivo
+#     tienen when: not ansible_check_mode porque en --check el sysctl no se
+#     aplicó realmente y el archivo puede no existir todavía.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # PASO 1: Configurar IPv4 Forwarding persistente en /etc/sysctl.d/
+# En --check: muestra si el parámetro cambiaría, sin aplicarlo.
 # -----------------------------------------------------------------------------
 - name: "SYSCTL | Configurar IPv4 Forwarding persistente"
   ansible.posix.sysctl:
@@ -25,8 +33,9 @@
 
 # -----------------------------------------------------------------------------
 # PASO 2: Configuraciones adicionales de sysctl para un router seguro
+# En --check: muestra qué cambiaría, sin aplicar.
 # -----------------------------------------------------------------------------
-- name: "SYSCTL | Deshabilitar envío de ICMP redirects (seguridad de router)"
+- name: "SYSCTL | Configurar parámetros de seguridad para router NAT"
   ansible.posix.sysctl:
     name: "{{ item.key }}"
     value: "{{ item.value }}"
@@ -38,22 +47,26 @@
     # Deshabilitar ICMP redirects de envío (buenas prácticas para routers)
     - { key: "net.ipv4.conf.all.send_redirects",    value: "0" }
     - { key: "net.ipv4.conf.default.send_redirects", value: "0" }
-    # Aceptar ICMP redirects solo de routers conocidos (más seguro)
+    # No aceptar ICMP redirects (protección contra ataques de routing)
     - { key: "net.ipv4.conf.all.accept_redirects",   value: "0" }
-    # Protección contra ataques de IP spoofing
+    # Protección contra IP spoofing (rp_filter = 1 = strict mode)
     - { key: "net.ipv4.conf.all.rp_filter",          value: "1" }
   tags: sysctl
 
 # -----------------------------------------------------------------------------
-# PASO 3: Verificar que el forwarding está activo
+# POSTCHECKS - Solo en modo real (when: not ansible_check_mode)
+# En --check el módulo sysctl no aplicó cambios reales al kernel,
+# así que el assert podría fallar si ip_forward no estaba ya en 1.
 # -----------------------------------------------------------------------------
-- name: "SYSCTL | Verificar IPv4 Forwarding activo"
+- name: "SYSCTL | Postcheck - Verificar IPv4 Forwarding activo"
   ansible.builtin.command: sysctl net.ipv4.ip_forward
   register: sysctl_check
   changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
   tags: sysctl
 
-- name: "SYSCTL | Resultado: IPv4 Forwarding"
+- name: "SYSCTL | Postcheck - Assert: IPv4 Forwarding debe ser 1"
   ansible.builtin.assert:
     that:
       - "'net.ipv4.ip_forward = 1' in sysctl_check.stdout"
@@ -62,15 +75,19 @@
       Valor actual: {{ sysctl_check.stdout }}
     success_msg: >
       OK: IPv4 Forwarding activo -> {{ sysctl_check.stdout }}
+  when: not ansible_check_mode
   tags: sysctl
 
-- name: "SYSCTL | Mostrar contenido del archivo sysctl generado"
+- name: "SYSCTL | Postcheck - Mostrar contenido del archivo sysctl generado"
   ansible.builtin.command: cat /etc/sysctl.d/99-rlimengano-forward.conf
   register: sysctl_file_content
   changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
   tags: sysctl
 
-- name: "SYSCTL | Contenido de sysctl.d/99-rlimengano-forward.conf"
+- name: "SYSCTL | Postcheck - Contenido de sysctl.d/99-rlimengano-forward.conf"
   ansible.builtin.debug:
     msg: "{{ sysctl_file_content.stdout_lines }}"
+  when: not ansible_check_mode
   tags: sysctl

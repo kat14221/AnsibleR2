@@ -8,13 +8,12 @@
 #   - input:       política ACCEPT (no se bloquea gestión ni SSH por ens34)
 #   - forward:     política DROP, solo permite LAN→WAN y retorno established
 #   - postrouting: masquerade 10.250.20.0/24 → ens34
-# =============================================================================
 #
-# NOTA SOBRE validate:
-# El parámetro validate del módulo ansible.builtin.template usa un archivo
-# temporal (%s) que nft no puede verificar si tiene directivas 'include'.
-# Por eso la validación de sintaxis se hace con un paso separado DESPUÉS
-# de escribir el archivo en su ruta definitiva.
+# ESTRATEGIA check_mode:
+#   - PRECHECKS (solo lectura del estado actual): check_mode: false
+#   - CAMBIOS (instalar, template, systemd): respetan check_mode normalmente
+#   - POSTCHECKS (validar estado post-aplicación): when: not ansible_check_mode
+# =============================================================================
 
 # -----------------------------------------------------------------------------
 # PASO 1: Verificar que nftables está instalado
@@ -39,18 +38,21 @@
 
 # -----------------------------------------------------------------------------
 # PASO 3: Backup de la configuración nftables actual
+# check_mode: false → el backup es idempotente y solo lectura sobre el ruleset.
+# Debe correr incluso en --check para tener el backup antes de cualquier cambio.
 # -----------------------------------------------------------------------------
 - name: "NFTABLES | Backup de configuración nftables actual"
   ansible.builtin.shell: |
     BACKUP_FILE="{{ backup_dir }}/nftables-backup-{{ ansible_facts['date_time']['epoch'] }}.conf"
-    if nft list ruleset 2>/dev/null | head -1; then
+    if nft list ruleset 2>/dev/null | head -1 | grep -q .; then
       nft list ruleset > "${BACKUP_FILE}"
       echo "Backup guardado en: ${BACKUP_FILE}"
     else
-      echo "nftables sin reglas actuales, no hay backup que hacer."
+      echo "nftables sin reglas actuales — nada que respaldar."
     fi
   register: nftables_backup
   changed_when: false
+  check_mode: false
   tags: nftables
 
 - name: "NFTABLES | Resultado del backup"
@@ -60,6 +62,7 @@
 
 # -----------------------------------------------------------------------------
 # PASO 4: Generar el archivo de configuración nftables principal
+# En --check: muestra diff del archivo generado sin aplicarlo.
 # -----------------------------------------------------------------------------
 - name: "NFTABLES | Generar /etc/nftables.conf desde template"
   ansible.builtin.template:
@@ -69,35 +72,38 @@
     group: root
     mode: "0600"
     backup: true
-    # NOTA: No se usa 'validate' aquí porque nft -c -f %s opera sobre un
-    # archivo temporal y puede fallar si el archivo usa paths absolutos.
-    # La verificación de sintaxis se hace en el paso siguiente.
   notify:
     - "restart nftables"
     - "enable nftables"
   tags: nftables
 
 # -----------------------------------------------------------------------------
-# PASO 4b: Verificar sintaxis del archivo recién generado
+# PASO 4b: Verificar sintaxis del archivo generado
+# Solo tiene sentido si el archivo fue escrito en disco (no en check_mode).
+# En check_mode la plantilla no se aplicó realmente.
 # -----------------------------------------------------------------------------
 - name: "NFTABLES | Verificar sintaxis del archivo nftables generado"
-  ansible.builtin.command: nft -c -f {{ nftables_config_file }}
+  ansible.builtin.command: "nft -c -f {{ nftables_config_file }}"
   register: nft_syntax_check
   changed_when: false
+  when: not ansible_check_mode
   tags: nftables
 
 - name: "NFTABLES | Resultado de verificación sintáctica"
   ansible.builtin.debug:
     msg: "Sintaxis nftables OK: {{ nftables_config_file }}"
+  when: not ansible_check_mode
   tags: nftables
 
 # -----------------------------------------------------------------------------
-# PASO 5: Aplicar la configuración inmediatamente (sin esperar al handler)
+# PASO 5: Aplicar la configuración y habilitar el servicio
+# En check_mode: reporta "would have changed" sin aplicar.
 # -----------------------------------------------------------------------------
 - name: "NFTABLES | Aplicar configuración nftables inmediatamente"
-  ansible.builtin.command: nft -f {{ nftables_config_file }}
+  ansible.builtin.command: "nft -f {{ nftables_config_file }}"
   register: nft_apply
   changed_when: nft_apply.rc == 0
+  when: not ansible_check_mode
   tags: nftables
 
 - name: "NFTABLES | Habilitar y arrancar servicio nftables"
@@ -109,27 +115,36 @@
   tags: nftables
 
 # -----------------------------------------------------------------------------
-# PASO 6: Flush handlers para asegurar el estado
+# PASO 6: Flush handlers
 # -----------------------------------------------------------------------------
 - name: "NFTABLES | Flush handlers"
   ansible.builtin.meta: flush_handlers
   tags: nftables
 
 # -----------------------------------------------------------------------------
-# PASO 7: Verificar que el ruleset fue cargado correctamente
+# POSTCHECKS - Solo en modo real (when: not ansible_check_mode)
+# En --check el ruleset no cambió, así que verificar masquerade activo
+# no tiene sentido (podría estar configurado del run anterior o no).
 # -----------------------------------------------------------------------------
-- name: "NFTABLES | Listar ruleset actual para verificación"
+
+- name: "NFTABLES | Postcheck - Listar ruleset para verificación"
   ansible.builtin.command: nft list ruleset
   register: nft_ruleset_verify
   changed_when: false
-  tags: nftables
+  when: not ansible_check_mode
+  tags:
+    - nftables
+    - postcheck
 
-- name: "NFTABLES | Mostrar ruleset activo"
+- name: "NFTABLES | Postcheck - Mostrar ruleset activo"
   ansible.builtin.debug:
     msg: "{{ nft_ruleset_verify.stdout_lines }}"
-  tags: nftables
+  when: not ansible_check_mode
+  tags:
+    - nftables
+    - postcheck
 
-- name: "NFTABLES | Verificar que NAT masquerade existe en el ruleset"
+- name: "NFTABLES | Postcheck - Assert: NAT masquerade existe en ruleset"
   ansible.builtin.assert:
     that:
       - "'masquerade' in nft_ruleset_verify.stdout"
@@ -137,15 +152,21 @@
       ERROR: Regla NAT masquerade NO encontrada en el ruleset de nftables.
       Revisar el template rlimengano-nftables.conf.j2
     success_msg: "OK: NAT masquerade encontrado en el ruleset de nftables."
-  tags: nftables
+  when: not ansible_check_mode
+  tags:
+    - nftables
+    - postcheck
 
-- name: "NFTABLES | Verificar que el servicio nftables está activo"
+- name: "NFTABLES | Postcheck - Verificar servicio nftables activo"
   ansible.builtin.command: systemctl is-active nftables
   register: nftables_service_status
   changed_when: false
-  tags: nftables
+  when: not ansible_check_mode
+  tags:
+    - nftables
+    - postcheck
 
-- name: "NFTABLES | Resultado del servicio nftables"
+- name: "NFTABLES | Postcheck - Assert: servicio nftables activo"
   ansible.builtin.assert:
     that:
       - nftables_service_status.stdout == "active"
@@ -153,4 +174,7 @@
       ERROR: El servicio nftables NO está activo.
       Estado: {{ nftables_service_status.stdout }}
     success_msg: "OK: Servicio nftables activo y corriendo."
-  tags: nftables
+  when: not ansible_check_mode
+  tags:
+    - nftables
+    - postcheck
