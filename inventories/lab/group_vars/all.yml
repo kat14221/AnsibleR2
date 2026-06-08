@@ -1,0 +1,45 @@
+---
+# ============================================================
+# inventories/lab/group_vars/all.yml
+# Variables compartidas por TODOS los dispositivos del lab
+# ============================================================
+
+# Credenciales (las reales van cifradas en vault.yml)
+ansible_user:     "{{ vault_ansible_user }}"
+ansible_password: "{{ vault_ansible_password }}"
+ansible_become:   true
+ansible_become_method: enable
+ansible_become_password: "{{ vault_enable_password }}"
+
+# Conexión por defecto para dispositivos de red
+ansible_connection: ansible.netcommon.network_cli
+
+# Configuración global de red
+ntp_servers:
+  - 192.168.100.1
+  - 8.8.8.8
+
+dns_servers:
+  - 8.8.8.8
+  - 1.1.1.1
+
+domain_name: "lab.red.local"
+
+# Syslog
+syslog_server: 192.168.100.50
+
+# Banner de acceso (cumplimiento de seguridad)
+login_banner: |
+  ************************************************************
+  *  ACCESO RESTRINGIDO - SOLO PERSONAL AUTORIZADO           *
+  *  Todas las actividades son monitoreadas y registradas.   *
+  *  Desconectese si no tiene autorizacion.                  *
+  ************************************************************
+
+# Directorio local de backups
+backup_dir: "{{ playbook_dir }}/../backups"
+
+# Configuración de SSH
+ssh_version: 2
+ssh_timeout:  60
+ssh_retries:  3

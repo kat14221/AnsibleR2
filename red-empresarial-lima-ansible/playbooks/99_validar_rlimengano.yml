@@ -1,0 +1,337 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_rlimengano.yml
+# =============================================================================
+# Propósito: Validaciones completas post-configuración de RLIMENGANO.
+# Este playbook NO realiza cambios, solo verifica el estado del sistema.
+#
+# Ejecutar con:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rlimengano.yml --ask-become-pass
+# =============================================================================
+
+- name: "RLIMENGANO :: Validaciones completas post-configuración"
+  hosts: rlimengano
+  gather_facts: true
+  become: true
+
+  vars:
+    # Colores ANSI para salida más legible
+    ok_prefix: "[OK]"
+    fail_prefix: "[FALLO]"
+    warn_prefix: "[AVISO]"
+
+  tasks:
+    # =========================================================================
+    # BLOQUE 1: Identidad del Sistema
+    # =========================================================================
+    - name: "VAL-01 | Verificar hostname configurado"
+      ansible.builtin.command: hostname
+      register: current_hostname
+      changed_when: false
+      tags: hostname
+
+    - name: "VAL-01 | Resultado: Hostname"
+      ansible.builtin.assert:
+        that:
+          - current_hostname.stdout == rlimengano_hostname
+        fail_msg: >
+          {{ fail_prefix }} Hostname incorrecto.
+          Esperado: {{ rlimengano_hostname }}
+          Actual   : {{ current_hostname.stdout }}
+        success_msg: >
+          {{ ok_prefix }} Hostname correcto: {{ current_hostname.stdout }}
+      tags: hostname
+
+    # =========================================================================
+    # BLOQUE 2: Interfaces de Red
+    # =========================================================================
+    - name: "VAL-02 | Obtener estado de interfaces"
+      ansible.builtin.shell: ip -br addr show
+      register: ifaces_estado
+      changed_when: false
+      tags: interfaces
+
+    - name: "VAL-02 | Mostrar interfaces actuales"
+      ansible.builtin.debug:
+        msg: "{{ ifaces_estado.stdout_lines }}"
+      tags: interfaces
+
+    - name: "VAL-02 | Verificar que ens35 tiene IP 10.250.20.1/24"
+      ansible.builtin.shell: >
+        ip addr show {{ lan_interface }} | grep -c '10\.250\.20\.1/24'
+      register: ens35_ip_check
+      changed_when: false
+      failed_when: false
+      tags: interfaces
+
+    - name: "VAL-02 | Resultado: IP de ens35"
+      ansible.builtin.assert:
+        that:
+          - ens35_ip_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} ens35 NO tiene 10.250.20.1/24.
+          Salida: {{ ens35_ip_check.stdout }}
+        success_msg: >
+          {{ ok_prefix }} ens35 tiene correctamente 10.250.20.1/24
+      tags: interfaces
+
+    - name: "VAL-02 | Verificar que ens34 tiene IP (DHCP activo)"
+      ansible.builtin.shell: >
+        ip addr show {{ wan_interface }} | grep -c 'inet '
+      register: ens34_ip_check
+      changed_when: false
+      failed_when: false
+      tags: interfaces
+
+    - name: "VAL-02 | Resultado: IP de ens34 (DHCP)"
+      ansible.builtin.assert:
+        that:
+          - ens34_ip_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} ens34 NO tiene IP asignada por DHCP.
+          Verificar conectividad con VM Network en ESXi.
+        success_msg: >
+          {{ ok_prefix }} ens34 tiene IP asignada (DHCP activo).
+      tags: interfaces
+
+    # =========================================================================
+    # BLOQUE 3: Tabla de Rutas
+    # =========================================================================
+    - name: "VAL-03 | Obtener tabla de rutas"
+      ansible.builtin.command: ip route show
+      register: rutas_sistema
+      changed_when: false
+      tags: routing
+
+    - name: "VAL-03 | Mostrar tabla de rutas"
+      ansible.builtin.debug:
+        msg: "{{ rutas_sistema.stdout_lines }}"
+      tags: routing
+
+    - name: "VAL-03 | Verificar que existe ruta por defecto"
+      ansible.builtin.shell: >
+        ip route show default | grep -c 'default'
+      register: default_route_check
+      changed_when: false
+      failed_when: false
+      tags: routing
+
+    - name: "VAL-03 | Resultado: Ruta por defecto"
+      ansible.builtin.assert:
+        that:
+          - default_route_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} No existe ruta por defecto.
+          Verificar que ens34 obtiene DHCP con gateway.
+        success_msg: >
+          {{ ok_prefix }} Existe ruta por defecto (gateway desde ens34).
+      tags: routing
+
+    - name: "VAL-03 | Verificar que la ruta por defecto sale por ens34"
+      ansible.builtin.shell: >
+        ip route show default | grep -c '{{ wan_interface }}'
+      register: default_via_wan
+      changed_when: false
+      failed_when: false
+      tags: routing
+
+    - name: "VAL-03 | Resultado: Ruta por defecto via ens34"
+      ansible.builtin.assert:
+        that:
+          - default_via_wan.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} La ruta por defecto NO sale por {{ wan_interface }}.
+          Revisar netplan y configuración DHCP.
+        success_msg: >
+          {{ ok_prefix }} Ruta por defecto correctamente via {{ wan_interface }}.
+      tags: routing
+
+    - name: "VAL-03 | Verificar que ens35 NO tiene gateway por defecto"
+      ansible.builtin.shell: >
+        ip route show default | grep -c '{{ lan_interface }}'
+      register: no_default_via_lan
+      changed_when: false
+      failed_when: false
+      tags: routing
+
+    - name: "VAL-03 | Resultado: ens35 sin gateway por defecto"
+      ansible.builtin.assert:
+        that:
+          - no_default_via_lan.stdout | int == 0
+        fail_msg: >
+          {{ fail_prefix }} ens35 tiene una ruta por defecto asignada.
+          Esto causará problemas de routing. Debe ser 0.
+        success_msg: >
+          {{ ok_prefix }} ens35 NO tiene gateway por defecto (correcto).
+      tags: routing
+
+    # =========================================================================
+    # BLOQUE 4: IPv4 Forwarding
+    # =========================================================================
+    - name: "VAL-04 | Verificar IPv4 Forwarding"
+      ansible.builtin.command: sysctl net.ipv4.ip_forward
+      register: ip_forward_val
+      changed_when: false
+      tags: sysctl
+
+    - name: "VAL-04 | Resultado: IPv4 Forwarding"
+      ansible.builtin.assert:
+        that:
+          - "'net.ipv4.ip_forward = 1' in ip_forward_val.stdout"
+        fail_msg: >
+          {{ fail_prefix }} IPv4 Forwarding NO está activo.
+          Valor actual: {{ ip_forward_val.stdout }}
+          Ejecutar: sysctl -w net.ipv4.ip_forward=1
+        success_msg: >
+          {{ ok_prefix }} IPv4 Forwarding ACTIVO: {{ ip_forward_val.stdout }}
+      tags: sysctl
+
+    # =========================================================================
+    # BLOQUE 5: nftables
+    # =========================================================================
+    - name: "VAL-05 | Verificar estado del servicio nftables"
+      ansible.builtin.command: systemctl is-active nftables
+      register: nftables_service
+      changed_when: false
+      failed_when: false
+      tags: nftables
+
+    - name: "VAL-05 | Resultado: Servicio nftables"
+      ansible.builtin.assert:
+        that:
+          - nftables_service.stdout == "active"
+        fail_msg: >
+          {{ fail_prefix }} nftables NO está activo.
+          Estado: {{ nftables_service.stdout }}
+          Ejecutar: systemctl start nftables
+        success_msg: >
+          {{ ok_prefix }} nftables está activo y corriendo.
+      tags: nftables
+
+    - name: "VAL-05 | Listar ruleset de nftables"
+      ansible.builtin.command: nft list ruleset
+      register: nft_ruleset
+      changed_when: false
+      tags: nftables
+
+    - name: "VAL-05 | Mostrar ruleset de nftables"
+      ansible.builtin.debug:
+        msg: "{{ nft_ruleset.stdout_lines }}"
+      tags: nftables
+
+    - name: "VAL-05 | Verificar que existe regla NAT masquerade"
+      ansible.builtin.shell: >
+        nft list ruleset | grep -c 'masquerade'
+      register: nat_masquerade_check
+      changed_when: false
+      failed_when: false
+      tags: nftables
+
+    - name: "VAL-05 | Resultado: NAT Masquerade"
+      ansible.builtin.assert:
+        that:
+          - nat_masquerade_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} Regla NAT masquerade NO encontrada en nftables.
+          Ejecutar el rol rlimengano_nat_gateway con tag nftables.
+        success_msg: >
+          {{ ok_prefix }} NAT masquerade encontrado en nftables.
+      tags: nftables
+
+    # =========================================================================
+    # BLOQUE 6: Conectividad a Internet (desde RLIMENGANO)
+    # =========================================================================
+    - name: "VAL-06 | Ping a 8.8.8.8 (DNS Google)"
+      ansible.builtin.command: ping -c 4 -W 5 8.8.8.8
+      register: ping_google_dns
+      changed_when: false
+      failed_when: false
+      tags: conectividad
+
+    - name: "VAL-06 | Resultado: Ping a 8.8.8.8"
+      ansible.builtin.assert:
+        that:
+          - ping_google_dns.rc == 0
+        fail_msg: >
+          {{ fail_prefix }} Sin conectividad a 8.8.8.8.
+          Verificar: ens34 DHCP, gateway por defecto, conectividad ESXi.
+          Salida: {{ ping_google_dns.stdout }}
+        success_msg: >
+          {{ ok_prefix }} Conectividad a 8.8.8.8 OK desde RLIMENGANO.
+      tags: conectividad
+
+    - name: "VAL-06 | Ping a 1.1.1.1 (DNS Cloudflare)"
+      ansible.builtin.command: ping -c 4 -W 5 1.1.1.1
+      register: ping_cloudflare
+      changed_when: false
+      failed_when: false
+      tags: conectividad
+
+    - name: "VAL-06 | Resultado: Ping a 1.1.1.1"
+      ansible.builtin.debug:
+        msg: >
+          {{ ok_prefix if ping_cloudflare.rc == 0 else warn_prefix }}
+          Ping a 1.1.1.1: {{ 'OK' if ping_cloudflare.rc == 0 else 'Sin respuesta (puede estar bloqueado)' }}
+      tags: conectividad
+
+    - name: "VAL-06 | Test HTTP a google.com"
+      ansible.builtin.command: curl -I --max-time 10 -s -o /dev/null -w "%{http_code}" https://google.com
+      register: curl_google
+      changed_when: false
+      failed_when: false
+      tags: conectividad
+
+    - name: "VAL-06 | Resultado: HTTP a google.com"
+      ansible.builtin.debug:
+        msg: >
+          {{ ok_prefix if curl_google.stdout in ['200','301','302'] else warn_prefix }}
+          HTTP google.com: {{ curl_google.stdout }}
+          {{ '(Conectividad HTTPS OK)' if curl_google.stdout in ['200','301','302'] else '(Verificar DNS/Internet)' }}
+      tags: conectividad
+
+    # =========================================================================
+    # BLOQUE 7: Resumen Final
+    # =========================================================================
+    - name: "VAL-07 | Resumen completo del sistema"
+      ansible.builtin.shell: |
+        echo "====== RESUMEN RLIMENGANO ======"
+        echo ""
+        echo "-- Hostname --"
+        hostname
+        echo ""
+        echo "-- Interfaces (ip -br addr) --"
+        ip -br addr
+        echo ""
+        echo "-- Rutas --"
+        ip route
+        echo ""
+        echo "-- IPv4 Forwarding --"
+        sysctl net.ipv4.ip_forward
+        echo ""
+        echo "-- nftables status --"
+        systemctl is-active nftables
+        echo ""
+        echo "-- NAT masquerade --"
+        nft list ruleset 2>/dev/null | grep masquerade || echo "No encontrado"
+        echo ""
+        echo "================================"
+      register: resumen_final
+      changed_when: false
+      tags: resumen
+
+    - name: "VAL-07 | Mostrar resumen completo"
+      ansible.builtin.debug:
+        msg: "{{ resumen_final.stdout_lines }}"
+      tags: resumen
+
+    - name: "VAL-07 | Mensaje final de validación"
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "  VALIDACIÓN COMPLETADA :: RLIMENGANO"
+          - "============================================================"
+          - "  Consulta docs/validaciones_rlimengano.md para pruebas"
+          - "  manuales desde RLIM1 y RLIM2."
+          - "============================================================"
+      tags: resumen

@@ -1,0 +1,65 @@
+---
+# ============================================================
+# roles/backup/tasks/main.yml
+# Backup y restore de configuraciones de dispositivos de red
+# ============================================================
+
+- name: "BACKUP | Crear directorio de backups localmente"
+  ansible.builtin.file:
+    path: "{{ backup_dir }}/{{ inventory_hostname }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  tags: [backup, setup]
+
+- name: "BACKUP | Obtener timestamp actual"
+  ansible.builtin.set_fact:
+    backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+  delegate_to: localhost
+  tags: [backup]
+
+- name: "BACKUP | Capturar running-config"
+  cisco.ios.ios_command:
+    commands:
+      - "show running-config"
+  register: running_config
+  tags: [backup, capture]
+
+- name: "BACKUP | Guardar configuración con timestamp"
+  ansible.builtin.copy:
+    content: "{{ running_config.stdout[0] }}"
+    dest: "{{ backup_dir }}/{{ inventory_hostname }}/{{ inventory_hostname }}_{{ backup_timestamp }}.cfg"
+    mode: '0644'
+  delegate_to: localhost
+  tags: [backup, save]
+
+- name: "BACKUP | Crear enlace simbólico a último backup"
+  ansible.builtin.copy:
+    content: "{{ running_config.stdout[0] }}"
+    dest: "{{ backup_dir }}/{{ inventory_hostname }}/{{ inventory_hostname }}_latest.cfg"
+    mode: '0644'
+  delegate_to: localhost
+  tags: [backup, save]
+
+- name: "BACKUP | Confirmar backup exitoso"
+  ansible.builtin.debug:
+    msg: "✅ Backup de {{ inventory_hostname }} guardado en {{ backup_dir }}/{{ inventory_hostname }}/{{ inventory_hostname }}_{{ backup_timestamp }}.cfg"
+  tags: [backup]
+
+# ── RESTORE ──────────────────────────────────────────────────
+- name: "RESTORE | Validar que existe el archivo de restore"
+  ansible.builtin.stat:
+    path: "{{ restore_file }}"
+  delegate_to: localhost
+  register: restore_stat
+  when: restore_file is defined
+  tags: [restore]
+
+- name: "RESTORE | Aplicar configuración desde archivo"
+  cisco.ios.ios_config:
+    src: "{{ restore_file }}"
+    replace: config
+  when:
+    - restore_file is defined
+    - restore_stat.stat.exists
+  tags: [restore]

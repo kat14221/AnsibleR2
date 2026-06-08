@@ -1,0 +1,86 @@
+{# =============================================================================
+   TEMPLATE: 99-rlimengano-netplan.yaml.j2
+   Genera la configuración Netplan de RLIMENGANO.
+
+   Archivo de destino: /etc/netplan/99-rlimengano-netplan.yaml
+   Prioridad 99: máxima precedencia sobre otros archivos Netplan.
+
+   INTERFACES:
+     - {{ wan_interface }} (ens34): DHCP desde VM Network (Internet real ESXi)
+       → Es la interfaz de gestión SSH y salida a Internet.
+       → NUNCA cambiar a IP estática.
+       → Conserva la ruta por defecto obtenida por DHCP.
+
+     - {{ lan_interface }} (ens35): IP estática {{ lan_ip }}/{{ lan_prefix }}
+       → Conectada a ENG-VM NETWORK.
+       → SIN gateway (no debe interferir con la ruta por defecto de ens34).
+
+   Ambas interfaces están ancladas por MAC para evitar asignaciones cruzadas.
+   ============================================================================= #}
+---
+# ===========================================================================
+# NETPLAN - RLIMENGANO - ISP Secundario Simulado
+# ===========================================================================
+# Generado automáticamente por Ansible
+# Proyecto : {{ proyecto_nombre | default('Red Empresarial Lima') }}
+# Sede     : {{ proyecto_sede | default('Lima') }}
+# Rol      : ISP Secundario Simulado (NAT Gateway)
+# Fecha    : {{ ansible_date_time.iso8601 }}
+# NO EDITAR MANUALMENTE - Los cambios serán sobreescritos por Ansible.
+# ===========================================================================
+network:
+  version: 2
+  renderer: networkd
+
+  ethernets:
+
+    # -------------------------------------------------------------------------
+    # ens34 - Interfaz WAN (VM Network - Internet real del ESXi)
+    # -------------------------------------------------------------------------
+    # FUNCIÓN: Acceso de gestión SSH + salida a Internet real.
+    # MODO   : DHCP (la IP es dinámica, actualmente ≈ 172.17.25.71/24)
+    # CRÍTICO: Nunca cambiar a IP estática.
+    #          Nunca asignar gateway manual (lo entrega el DHCP).
+    # MAC    : {{ wan_mac }}
+    # -------------------------------------------------------------------------
+    {{ wan_interface }}:
+      match:
+        macaddress: "{{ wan_mac }}"
+      set-name: {{ wan_interface }}
+      dhcp4: true
+      dhcp6: false
+      dhcp4-overrides:
+        # Usar la ruta por defecto que entrega el servidor DHCP
+        use-routes: true
+        # Usar el DNS que entrega el DHCP (o los de VM Network)
+        use-dns: true
+        # Métrica baja = ens34 es la ruta preferida
+        route-metric: 100
+
+    # -------------------------------------------------------------------------
+    # ens35 - Interfaz LAN (ENG-VM NETWORK - Red ISP secundario simulado)
+    # -------------------------------------------------------------------------
+    # FUNCIÓN: Gateway del ISP secundario simulado.
+    #          RLIM1 tendrá: IP 10.250.20.11/24  GW 10.250.20.1
+    #          RLIM2 tendrá: IP 10.250.20.12/24  GW 10.250.20.1
+    # MODO   : IP estática, SIN gateway por defecto.
+    # CRÍTICO: No agregar 'routes' hacia 0.0.0.0/0 ni 'gateway4'.
+    #          La ruta por defecto debe salir ÚNICAMENTE por ens34.
+    # MAC    : {{ lan_mac }}
+    # -------------------------------------------------------------------------
+    {{ lan_interface }}:
+      match:
+        macaddress: "{{ lan_mac }}"
+      set-name: {{ lan_interface }}
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - "{{ lan_ip }}/{{ lan_prefix }}"
+      # nameservers en ens35 solo afecta la resolución DNS local del host,
+      # no el servicio DNS que reciben los clientes de la LAN.
+      nameservers:
+        addresses:
+{% for dns in dhcp_dns %}
+          - "{{ dns }}"
+{% endfor %}
+      # Sin 'routes' ni 'gateway4': ens35 no aporta ruta por defecto.

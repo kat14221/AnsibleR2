@@ -1,0 +1,53 @@
+---
+# ============================================================
+# roles/interfaces/tasks/main.yml
+# Configuración de interfaces físicas y loopbacks
+# ============================================================
+
+- name: "INTERFACES | Configurar interfaces"
+  cisco.ios.ios_interfaces:
+    config:
+      - name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        enabled: "{{ not item.shutdown | default(false) }}"
+    state: merged
+  loop: "{{ interfaces }}"
+  when: interfaces is defined
+  tags: [interfaces, config]
+
+- name: "INTERFACES | Configurar direcciones IP"
+  cisco.ios.ios_l3_interfaces:
+    config:
+      - name: "{{ item.name }}"
+        ipv4:
+          - address: "{{ item.ip_address }}/{{ item.prefix_length }}"
+    state: merged
+  loop: "{{ interfaces }}"
+  when:
+    - interfaces is defined
+    - item.ip_address is defined
+    - item.ip_address != 'dhcp'
+  tags: [interfaces, ip]
+
+- name: "INTERFACES | Activar interfaces configuradas"
+  cisco.ios.ios_config:
+    parents: "interface {{ item.name }}"
+    lines:
+      - "no shutdown"
+  loop: "{{ interfaces }}"
+  when:
+    - interfaces is defined
+    - not item.shutdown | default(false)
+  tags: [interfaces, state]
+
+- name: "INTERFACES | Verificar estado de interfaces"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip interface brief"
+  register: interface_status
+  tags: [interfaces, verify]
+
+- name: "INTERFACES | Mostrar estado de interfaces"
+  ansible.builtin.debug:
+    var: interface_status.stdout_lines
+  tags: [interfaces, verify]

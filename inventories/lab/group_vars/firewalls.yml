@@ -1,0 +1,29 @@
+---
+# ============================================================
+# inventories/lab/group_vars/firewalls.yml
+# Variables específicas para Firewalls
+# ============================================================
+
+ansible_network_os:  fortinet.fortios.fortios
+ansible_connection:  httpapi
+ansible_httpapi_use_ssl:    true
+ansible_httpapi_validate_certs: false
+ansible_httpapi_port:       443
+
+# Fortinet FortiOS access token (se sobreescribe con vault)
+ansible_access_token: "{{ vault_fortios_token }}"
+
+# Políticas por defecto
+firewall_defaults:
+  log_all_traffic: true
+  deny_all_default: true
+  inspection_mode: flow
+
+# Zonas de seguridad
+firewall_zones:
+  - name: WAN
+    description: "Zona externa - Internet"
+  - name: LAN
+    description: "Zona interna - Red corporativa"
+  - name: DMZ
+    description: "Zona desmilitarizada"

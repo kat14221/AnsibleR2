@@ -1,0 +1,56 @@
+---
+# =============================================================================
+# ROLE: rlimengano_nat_gateway - handlers/main.yml
+# =============================================================================
+# Handlers del rol. Se ejecutan cuando son notificados por las tareas.
+# Los handlers se ejecutan UNA sola vez al final, en orden de notificación.
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# Handler: Aplicar Netplan
+# Triggered by: tasks/netplan.yml cuando hay cambios en el template
+# -----------------------------------------------------------------------
+- name: "apply netplan"
+  ansible.builtin.command: netplan apply
+  listen: "apply netplan"
+  # NOTA: netplan apply puede interrumpir brevemente la red.
+  # ens34 recuperará IP por DHCP automáticamente.
+
+# -----------------------------------------------------------------------
+# Handler: Recargar sysctl
+# Triggered by: tasks/sysctl.yml cuando se modifican parámetros kernel
+# -----------------------------------------------------------------------
+- name: "reload sysctl"
+  ansible.builtin.command: sysctl --system
+  listen: "reload sysctl"
+
+# -----------------------------------------------------------------------
+# Handler: Reiniciar nftables
+# Triggered by: tasks/nftables.yml cuando cambia la configuración
+# -----------------------------------------------------------------------
+- name: "restart nftables"
+  ansible.builtin.systemd:
+    name: nftables
+    state: restarted
+    daemon_reload: true
+  listen: "restart nftables"
+
+# -----------------------------------------------------------------------
+# Handler: Habilitar nftables en el arranque
+# Triggered by: tasks/nftables.yml
+# -----------------------------------------------------------------------
+- name: "enable nftables"
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+  listen: "enable nftables"
+
+# -----------------------------------------------------------------------
+# Handler: Reiniciar isc-dhcp-server (solo si está habilitado)
+# Triggered by: tasks/dhcp_optional.yml
+# -----------------------------------------------------------------------
+- name: "restart isc-dhcp-server"
+  ansible.builtin.systemd:
+    name: isc-dhcp-server
+    state: restarted
+  listen: "restart isc-dhcp-server"

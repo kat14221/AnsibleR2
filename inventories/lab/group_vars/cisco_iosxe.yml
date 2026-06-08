@@ -1,0 +1,23 @@
+---
+# ============================================================
+# inventories/lab/group_vars/cisco_iosxe.yml
+# Variables específicas para dispositivos Cisco IOS-XE
+# ============================================================
+
+ansible_network_os:    cisco.ios.ios
+ansible_connection:    ansible.netcommon.network_cli
+ansible_become:        true
+ansible_become_method: enable
+
+# IOS-XE soporta NETCONF (habilitar para operaciones avanzadas)
+netconf_enabled: false
+netconf_port:    830
+
+# Características específicas de IOS-XE
+iosxe_features:
+  restconf: false
+  guestshell: false
+  iox: false
+
+# Parámetros de SD-WAN (para futura integración)
+sdwan_ready: false

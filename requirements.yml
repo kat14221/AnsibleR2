@@ -1,0 +1,31 @@
+---
+# ============================================================
+# requirements.yml - Colecciones de Ansible Galaxy Requeridas
+# ============================================================
+# Instalar con: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  # Cisco IOS / IOS-XE / IOS-XR
+  - name: cisco.ios
+    version: ">=5.0.0"
+
+  - name: cisco.iosxr
+    version: ">=9.0.0"
+
+  # Fortinet FortiOS
+  - name: fortinet.fortios
+    version: ">=2.3.0"
+
+  # Colección de red general de Ansible
+  - name: ansible.netcommon
+    version: ">=6.0.0"
+
+  # Utilidades para parseo de salida de red (TextFSM, TTP)
+  - name: ansible.utils
+    version: ">=4.0.0"
+
+  # Arista EOS (para futuras expansiones)
+  - name: arista.eos
+    version: ">=9.0.0"
+
+roles: []

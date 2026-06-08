@@ -1,0 +1,72 @@
+---
+# ============================================================
+# roles/common/tasks/main.yml
+# Configuraciones base: hostname, banner, NTP, DNS, logging
+# ============================================================
+
+- name: "COMMON | Configurar hostname"
+  cisco.ios.ios_hostname:
+    config:
+      hostname: "{{ hostname }}"
+  tags: [common, hostname]
+
+- name: "COMMON | Configurar dominio"
+  cisco.ios.ios_config:
+    lines:
+      - "ip domain-name {{ domain_name }}"
+  tags: [common, domain]
+
+- name: "COMMON | Configurar banner MOTD"
+  cisco.ios.ios_banner:
+    banner: motd
+    text: "{{ motd_banner }}"
+    state: present
+  tags: [common, banner]
+
+- name: "COMMON | Configurar servidores NTP"
+  cisco.ios.ios_ntp_global:
+    config:
+      servers:
+        - server: "{{ ntp_servers.primary }}"
+          prefer: true
+        - server: "{{ ntp_servers.secondary }}"
+  tags: [common, ntp]
+
+- name: "COMMON | Configurar DNS"
+  cisco.ios.ios_config:
+    lines:
+      - "ip name-server {{ item }}"
+  loop: "{{ dns_servers }}"
+  tags: [common, dns]
+
+- name: "COMMON | Configurar Syslog"
+  cisco.ios.ios_logging_global:
+    config:
+      hosts:
+        - hostname: "{{ syslog_server }}"
+          severity: "{{ syslog_severity }}"
+      buffered:
+        size: 16384
+        severity: informational
+      console:
+        severity: warnings
+  tags: [common, logging]
+
+- name: "COMMON | Deshabilitar lookup DNS para comandos de CLI"
+  cisco.ios.ios_config:
+    lines:
+      - "no ip domain-lookup"
+  tags: [common, dns]
+
+- name: "COMMON | Habilitar timestamp en logs"
+  cisco.ios.ios_config:
+    lines:
+      - "service timestamps log datetime msec localtime"
+      - "service timestamps debug datetime msec localtime"
+  tags: [common, logging]
+
+- name: "COMMON | Habilitar cifrado de passwords en configuración"
+  cisco.ios.ios_config:
+    lines:
+      - "service password-encryption"
+  tags: [common, security]

@@ -1,0 +1,79 @@
+---
+# ============================================================
+# roles/monitoring/tasks/main.yml
+# Validación y monitoreo del estado de la red
+# ============================================================
+
+- name: "MONITOR | Verificar estado de interfaces"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip interface brief"
+  register: iface_brief
+  tags: [monitoring, interfaces]
+
+- name: "MONITOR | Verificar vecinos OSPF"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip ospf neighbor"
+  register: ospf_status
+  when: ospf is defined
+  tags: [monitoring, ospf]
+
+- name: "MONITOR | Verificar vecinos BGP"
+  cisco.ios.ios_command:
+    commands:
+      - "show bgp summary"
+  register: bgp_status
+  when: bgp is defined and bgp.enabled | default(false)
+  tags: [monitoring, bgp]
+
+- name: "MONITOR | Verificar tabla de routing"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip route summary"
+  register: route_summary
+  tags: [monitoring, routing]
+
+- name: "MONITOR | Verificar CPU y memoria"
+  cisco.ios.ios_command:
+    commands:
+      - "show processes cpu sorted | head 10"
+      - "show version | include RAM"
+  register: hw_status
+  tags: [monitoring, hardware]
+
+- name: "MONITOR | Crear directorio de reportes"
+  ansible.builtin.file:
+    path: "{{ log_dir }}/reports"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  tags: [monitoring, report]
+
+- name: "MONITOR | Generar reporte JSON"
+  ansible.builtin.copy:
+    content: |
+      {
+        "device": "{{ inventory_hostname }}",
+        "timestamp": "{{ ansible_date_time.iso8601 }}",
+        "interfaces": {{ iface_brief.stdout_lines | to_json }},
+        "ospf_neighbors": {{ ospf_status.stdout_lines | default([]) | to_json }},
+        "route_summary": {{ route_summary.stdout_lines | to_json }},
+        "cpu_memory": {{ hw_status.stdout_lines | to_json }}
+      }
+    dest: "{{ log_dir }}/reports/{{ inventory_hostname }}_report.json"
+    mode: '0644'
+  delegate_to: localhost
+  tags: [monitoring, report]
+
+- name: "MONITOR | Mostrar resumen de estado"
+  ansible.builtin.debug:
+    msg:
+      - "════════════════════════════════════════"
+      - " ESTADO DEL DISPOSITIVO: {{ inventory_hostname }}"
+      - "════════════════════════════════════════"
+      - "INTERFACES:"
+      - "{{ iface_brief.stdout_lines }}"
+      - "RUTAS:"
+      - "{{ route_summary.stdout_lines }}"
+  tags: [monitoring]

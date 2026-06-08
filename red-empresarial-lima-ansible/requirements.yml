@@ -1,0 +1,17 @@
+# =============================================================================
+# REQUIREMENTS.YML - Dependencias de Colecciones Ansible
+# =============================================================================
+# Instalar con:  ansible-galaxy collection install -r requirements.yml
+# =============================================================================
+
+---
+collections:
+  # Colección de utilidades para posix/linux
+  - name: ansible.posix
+    version: ">=1.5.0"
+
+  # Colección de módulos de utilidades
+  - name: community.general
+    version: ">=7.0.0"
+
+roles: []

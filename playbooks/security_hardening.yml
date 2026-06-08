@@ -1,0 +1,41 @@
+---
+# ============================================================
+# playbooks/security_hardening.yml
+# Aplicar hardening de seguridad a todos los dispositivos
+# ============================================================
+# Uso:
+#   ansible-playbook playbooks/security_hardening.yml
+#   ansible-playbook playbooks/security_hardening.yml --tags ssh
+# ============================================================
+
+- name: "HARDENING | Aplicar políticas de seguridad"
+  hosts: all_cisco
+  gather_facts: false
+  serial: 3
+
+  pre_tasks:
+    - name: "Hacer backup ANTES del hardening"
+      cisco.ios.ios_command:
+        commands:
+          - "show running-config"
+      register: pre_hardening_config
+
+    - name: "Guardar backup pre-hardening"
+      ansible.builtin.copy:
+        content: "{{ pre_hardening_config.stdout[0] }}"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}/{{ inventory_hostname }}_pre_hardening.cfg"
+        mode: '0644'
+      delegate_to: localhost
+
+  roles:
+    - role: security_hardening
+      tags: [hardening]
+
+  post_tasks:
+    - name: "Guardar configuración después del hardening"
+      cisco.ios.ios_config:
+        save_when: always
+
+    - name: "Confirmar hardening aplicado"
+      ansible.builtin.debug:
+        msg: "✅ Hardening aplicado correctamente en {{ inventory_hostname }}"

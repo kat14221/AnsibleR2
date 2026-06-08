@@ -1,0 +1,47 @@
+---
+# ============================================================
+# playbooks/monitoring.yml
+# Validación y monitoreo del estado de la red
+# ============================================================
+# Uso:
+#   ansible-playbook playbooks/monitoring.yml
+#   ansible-playbook playbooks/monitoring.yml --limit cisco_ios
+# ============================================================
+
+- name: "MONITORING | Validar estado de la red"
+  hosts: all_cisco
+  gather_facts: true
+  serial: 10
+
+  pre_tasks:
+    - name: "Crear directorios de reportes"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ log_dir }}"
+        - "{{ log_dir }}/reports"
+      delegate_to: localhost
+      run_once: true
+
+  roles:
+    - role: monitoring
+      tags: [monitoring]
+
+  post_tasks:
+    - name: "Generar índice de reportes"
+      ansible.builtin.copy:
+        content: |
+          # Reporte de Estado de Red
+          Fecha: {{ ansible_date_time.iso8601 }}
+          Dispositivos chequeados: {{ ansible_play_hosts | length }}
+
+          ## Dispositivos
+          {% for host in ansible_play_hosts %}
+          - {{ host }}
+          {% endfor %}
+        dest: "{{ log_dir }}/reports/index.md"
+        mode: '0644'
+      delegate_to: localhost
+      run_once: true

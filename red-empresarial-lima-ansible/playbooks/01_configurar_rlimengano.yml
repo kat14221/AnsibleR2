@@ -1,0 +1,154 @@
+---
+# =============================================================================
+# PLAYBOOK: 01_configurar_rlimengano.yml
+# =============================================================================
+# Propósito: Configuración completa de RLIMENGANO como ISP secundario simulado.
+#
+# Ejecutar con:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/01_configurar_rlimengano.yml --ask-become-pass
+#
+# Requiere: ansible-galaxy collection install -r requirements.yml
+# =============================================================================
+
+- name: "RLIMENGANO :: Configuración completa de ISP secundario simulado"
+  hosts: rlimengano
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    # -------------------------------------------------------------------------
+    # Verificación de seguridad: Confirmar que ejecutamos en el host correcto
+    # -------------------------------------------------------------------------
+    - name: "PRE | Verificar que el host de destino es RLIMENGANO"
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == "rlimengano"
+        fail_msg: >
+          ERROR: Este playbook solo debe ejecutarse en RLIMENGANO.
+          Host actual: {{ inventory_hostname }}
+        success_msg: "OK: Ejecutando en el host correcto: {{ inventory_hostname }}"
+      tags: always
+
+    - name: "PRE | Mostrar información del sistema detectado"
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "  RLIMENGANO :: Inicio de configuración"
+          - "============================================================"
+          - "  Host     : {{ inventory_hostname }}"
+          - "  OS       : {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "  Kernel   : {{ ansible_kernel }}"
+          - "  Fecha    : {{ ansible_date_time.iso8601 }}"
+          - "  WAN (ens34): {{ wan_interface }} - modo {{ wan_mode }}"
+          - "  LAN (ens35): {{ lan_interface }} - IP {{ lan_ip }}/{{ lan_prefix }}"
+          - "  NAT      : {{ 'HABILITADO' if nat_enabled else 'DESHABILITADO' }}"
+          - "  DHCP ISP2: {{ 'HABILITADO' if enable_dhcp_isp2 else 'DESHABILITADO' }}"
+          - "============================================================"
+      tags: always
+
+    - name: "PRE | Verificar que la interfaz WAN (ens34) existe"
+      ansible.builtin.assert:
+        that:
+          - wan_interface in ansible_interfaces
+        fail_msg: >
+          ERROR CRÍTICO: La interfaz {{ wan_interface }} no existe en este sistema.
+          Interfaces disponibles: {{ ansible_interfaces | join(', ') }}
+          ABORTANDO para no perder conectividad.
+        success_msg: "OK: Interfaz WAN {{ wan_interface }} detectada correctamente."
+      tags: always
+
+    - name: "PRE | Verificar que la interfaz LAN (ens35) existe"
+      ansible.builtin.assert:
+        that:
+          - lan_interface in ansible_interfaces
+        fail_msg: >
+          ERROR: La interfaz {{ lan_interface }} no existe.
+          Verifique que la tarjeta de red esté conectada a ENG-VM NETWORK en ESXi.
+        success_msg: "OK: Interfaz LAN {{ lan_interface }} detectada correctamente."
+      tags: always
+
+    - name: "PRE | Crear directorio de backups"
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: always
+
+    - name: "PRE | Crear directorio de logs"
+      ansible.builtin.file:
+        path: "/root/backups/rlimengano/logs"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: always
+
+  roles:
+    # -------------------------------------------------------------------------
+    # Rol 1: Configuraciones comunes de Linux
+    # -------------------------------------------------------------------------
+    - role: linux_common
+      tags:
+        - common
+        - hostname
+        - packages
+
+    # -------------------------------------------------------------------------
+    # Rol 2: Configuración NAT Gateway (núcleo del dispositivo)
+    # -------------------------------------------------------------------------
+    - role: rlimengano_nat_gateway
+      tags:
+        - nat_gateway
+        - netplan
+        - sysctl
+        - nftables
+        - dhcp
+        - firewall
+
+  post_tasks:
+    # -------------------------------------------------------------------------
+    # Resumen final de configuración aplicada
+    # -------------------------------------------------------------------------
+    - name: "POST | Recopilar datos actuales del sistema"
+      ansible.builtin.shell: |
+        echo "=== HOSTNAME ==="
+        hostname
+        echo ""
+        echo "=== INTERFACES ==="
+        ip -br addr show
+        echo ""
+        echo "=== RUTAS ==="
+        ip route show
+        echo ""
+        echo "=== IP FORWARDING ==="
+        sysctl net.ipv4.ip_forward
+        echo ""
+        echo "=== NFTABLES STATUS ==="
+        systemctl is-active nftables || echo "nftables no activo"
+      register: resumen_sistema
+      changed_when: false
+      tags: always
+
+    - name: "POST | Mostrar resumen del sistema configurado"
+      ansible.builtin.debug:
+        msg: "{{ resumen_sistema.stdout_lines }}"
+      tags: always
+
+    - name: "POST | Mensaje de finalización"
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "  RLIMENGANO :: Configuración completada exitosamente"
+          - "============================================================"
+          - "  Para validar la configuración ejecute:"
+          - "  ansible-playbook -i inventories/local/hosts.yml \\"
+          - "    playbooks/99_validar_rlimengano.yml --ask-become-pass"
+          - "============================================================"
+          - "  Documentación disponible en:"
+          - "  - docs/ejecucion_rlimengano.md"
+          - "  - docs/validaciones_rlimengano.md"
+          - "============================================================"
+      tags: always

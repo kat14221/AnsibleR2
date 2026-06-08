@@ -1,0 +1,38 @@
+---
+# =============================================================================
+# ROLE: rlimengano_nat_gateway - tasks/main.yml
+# =============================================================================
+# Punto de entrada del rol. Incluye los archivos de tareas en orden.
+# Cada archivo de tareas es independiente y etiquetado.
+# =============================================================================
+
+- name: "RLIMENGANO | Importar tareas: Netplan (configuración de red)"
+  ansible.builtin.import_tasks: netplan.yml
+  tags:
+    - netplan
+    - red
+    - network
+
+- name: "RLIMENGANO | Importar tareas: sysctl (IPv4 Forwarding)"
+  ansible.builtin.import_tasks: sysctl.yml
+  tags:
+    - sysctl
+    - forwarding
+
+- name: "RLIMENGANO | Importar tareas: nftables (NAT y Firewall)"
+  ansible.builtin.import_tasks: nftables.yml
+  tags:
+    - nftables
+    - nat
+    - firewall
+
+- name: "RLIMENGANO | Importar tareas: DHCP opcional en ens35"
+  ansible.builtin.import_tasks: dhcp_optional.yml
+  tags:
+    - dhcp
+
+- name: "RLIMENGANO | Importar tareas: Validaciones finales"
+  ansible.builtin.import_tasks: validation.yml
+  tags:
+    - validation
+    - verify

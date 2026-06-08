@@ -1,0 +1,53 @@
+# ============================================================
+# .gitignore - Proyecto Ansible de Automatización de Redes
+# ============================================================
+
+# Credenciales y archivos sensibles - NUNCA subir al repositorio
+.vault_pass
+*.vault
+vault.yml
+secrets.yml
+*password*
+*credentials*
+
+# Backups de configuraciones (pueden contener info sensible)
+backups/
+!backups/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Archivos de retry de Ansible
+*.retry
+
+# Archivos temporales de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+env/
+venv/
+.venv/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ansible Galaxy roles instalados (se reinstalan con requirements.yml)
+# roles/vendor/
+
+# Archivos de host conocidos SSH temporales
+known_hosts
+
+# Archivos de inventario dinámico cacheados
+.cache/

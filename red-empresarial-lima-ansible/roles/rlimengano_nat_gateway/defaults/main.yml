@@ -1,0 +1,53 @@
+---
+# =============================================================================
+# ROLE: rlimengano_nat_gateway - defaults/main.yml
+# =============================================================================
+# Valores por defecto. Pueden sobreescribirse en host_vars/rlimengano.yml
+# o pasarse como variables extra en la línea de comandos.
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# Identificación
+# -----------------------------------------------------------------------
+rlimengano_hostname: "RLIMENGANO"
+
+# -----------------------------------------------------------------------
+# Interfaces de red
+# -----------------------------------------------------------------------
+wan_interface: "ens34"
+lan_interface: "ens35"
+lan_ip: "10.250.20.1"
+lan_prefix: 24
+lan_network: "10.250.20.0/24"
+
+# -----------------------------------------------------------------------
+# NAT
+# -----------------------------------------------------------------------
+nat_enabled: true
+nat_out_interface: "ens34"
+nat_inside_interface: "ens35"
+
+# -----------------------------------------------------------------------
+# Gestión
+# -----------------------------------------------------------------------
+management_network: "172.17.25.0/24"
+
+# -----------------------------------------------------------------------
+# DHCP opcional (deshabilitado por defecto)
+# -----------------------------------------------------------------------
+enable_dhcp_isp2: false
+dhcp_range_start: "10.250.20.100"
+dhcp_range_end: "10.250.20.200"
+dhcp_gateway: "10.250.20.1"
+dhcp_lease_time: "12h"
+dhcp_dns:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+# -----------------------------------------------------------------------
+# Rutas de archivos de configuración
+# -----------------------------------------------------------------------
+backup_dir: "/root/backups/rlimengano"
+netplan_config_file: "/etc/netplan/99-rlimengano-netplan.yaml"
+nftables_config_file: "/etc/nftables.conf"
+nftables_custom_file: "/etc/nftables.d/rlimengano-nat.conf"

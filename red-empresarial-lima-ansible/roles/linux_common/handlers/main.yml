@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# ROLE: linux_common - handlers/main.yml
+# =============================================================================
+# Handlers que se ejecutan cuando se notifican desde las tareas.
+# =============================================================================
+
+- name: "restart systemd-hostnamed"
+  ansible.builtin.systemd:
+    name: systemd-hostnamed
+    state: restarted
+  listen: "restart systemd-hostnamed"

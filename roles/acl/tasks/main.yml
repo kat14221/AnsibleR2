@@ -1,0 +1,39 @@
+---
+# ============================================================
+# roles/acl/tasks/main.yml
+# Configuración de Access Control Lists (ACL)
+# ============================================================
+
+- name: "ACL | Crear ACLs extendidas"
+  cisco.ios.ios_acls:
+    config:
+      - afi: ipv4
+        acls:
+          - name: "{{ item.name }}"
+            acl_type: "{{ item.type | default('extended') }}"
+            aces: "{{ item.aces }}"
+    state: merged
+  loop: "{{ acl_definitions | default([]) }}"
+  when: acl_definitions is defined
+  tags: [acl, create]
+
+- name: "ACL | Aplicar ACLs a interfaces"
+  cisco.ios.ios_config:
+    parents: "interface {{ item.interface }}"
+    lines:
+      - "ip access-group {{ item.name }} {{ item.direction }}"
+  loop: "{{ acls | default([]) }}"
+  when: acls is defined
+  tags: [acl, apply]
+
+- name: "ACL | Verificar ACLs configuradas"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip access-lists"
+  register: acl_status
+  tags: [acl, verify]
+
+- name: "ACL | Mostrar ACLs"
+  ansible.builtin.debug:
+    var: acl_status.stdout_lines
+  tags: [acl, verify]

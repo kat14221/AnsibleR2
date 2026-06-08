@@ -1,0 +1,96 @@
+# =============================================================================
+# HOST_VARS/RLIMENGANO.YML - Variables Específicas de RLIMENGANO
+# =============================================================================
+# VM función: ISP secundario simulado para la sede Lima.
+# Simula un segundo proveedor de Internet dentro del laboratorio ESXi.
+# Conecta VM Network (Internet real) → ENG-VM NETWORK (WAN2 para RLIM1/RLIM2)
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------
+# Identidad del dispositivo
+# -----------------------------------------------------------------------
+rlimengano_hostname: "RLIMENGANO"
+# NOTA: Se usa RLIMENGANO (sin Ñ) como hostname del sistema Linux.
+#       El nombre lógico del proyecto es RLIMENGAÑO.
+
+# -----------------------------------------------------------------------
+# Interfaz WAN - ens34
+# Conectada a: VM Network (Internet real del ESXi)
+# Modo: DHCP (NO cambiar a estática, es la vía de acceso a la VM)
+# -----------------------------------------------------------------------
+wan_interface: "ens34"
+wan_mac: "00:0c:29:19:1b:7c"
+wan_mode: "dhcp"
+# IP actual observada: 172.17.25.71/24 (dinámica, puede cambiar)
+# ADVERTENCIA: No asignar IP estática a ens34, mantener DHCP.
+
+# -----------------------------------------------------------------------
+# Interfaz LAN - ens35
+# Conectada a: ENG-VM NETWORK (red ISP secundario simulado)
+# Modo: Estática
+# -----------------------------------------------------------------------
+lan_interface: "ens35"
+lan_mac: "00:0c:29:19:1b:86"
+lan_ip: "10.250.20.1"
+lan_prefix: 24
+lan_prefix_full: "10.250.20.1/24"
+lan_network: "10.250.20.0/24"
+# ADVERTENCIA: ens35 NO debe tener gateway por defecto.
+# La ruta por defecto debe salir SOLO por ens34.
+
+# -----------------------------------------------------------------------
+# Red de gestión (acceso SSH permitido)
+# -----------------------------------------------------------------------
+management_network: "172.17.25.0/24"
+
+# -----------------------------------------------------------------------
+# NAT/PAT Configuration
+# -----------------------------------------------------------------------
+nat_enabled: true
+nat_out_interface: "ens34"      # Interfaz de salida a Internet
+nat_inside_interface: "ens35"   # Interfaz de la red interna (LAN ISP2)
+
+# -----------------------------------------------------------------------
+# DHCP Opcional en ens35 (ENG-VM NETWORK)
+# Por defecto: DESHABILITADO (RLIM1 y RLIM2 usan IPs estáticas)
+# Cambiar a true si se necesitan IPs dinámicas adicionales.
+# -----------------------------------------------------------------------
+enable_dhcp_isp2: false
+
+dhcp_range_start: "10.250.20.100"
+dhcp_range_end: "10.250.20.200"
+dhcp_gateway: "10.250.20.1"
+dhcp_lease_time: "12h"
+dhcp_dns:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+# -----------------------------------------------------------------------
+# Clientes fijos en ENG-VM NETWORK (IPs estáticas documentadas)
+# RLIM1 y RLIM2 configuran estas IPs manualmente, no por DHCP.
+# -----------------------------------------------------------------------
+rlim1_nombre: "RLIM1-PRINCIPAL"
+rlim1_wan2_ip: "10.250.20.11"
+rlim1_wan2_prefix: "10.250.20.11/24"
+
+rlim2_nombre: "RLIM2-SECUNDARIO"
+rlim2_wan2_ip: "10.250.20.12"
+rlim2_wan2_prefix: "10.250.20.12/24"
+
+# -----------------------------------------------------------------------
+# Directorio de backups específico de RLIMENGANO
+# -----------------------------------------------------------------------
+backup_dir: "/root/backups/rlimengano"
+
+# -----------------------------------------------------------------------
+# Archivo Netplan principal del dispositivo
+# -----------------------------------------------------------------------
+netplan_config_file: "/etc/netplan/99-rlimengano-netplan.yaml"
+netplan_config_dir: "/etc/netplan"
+
+# -----------------------------------------------------------------------
+# Configuración nftables
+# -----------------------------------------------------------------------
+nftables_config_file: "/etc/nftables.conf"
+nftables_custom_file: "/etc/nftables.d/rlimengano-nat.conf"

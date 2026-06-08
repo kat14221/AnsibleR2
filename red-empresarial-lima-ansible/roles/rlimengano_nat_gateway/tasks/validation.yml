@@ -1,0 +1,141 @@
+---
+# =============================================================================
+# ROLE: rlimengano_nat_gateway - tasks/validation.yml
+# =============================================================================
+# Validaciones finales del rol. No realiza cambios.
+# Se ejecuta al final del rol para confirmar que todo está correcto.
+# =============================================================================
+
+- name: "VALIDATION | === Iniciando validaciones finales del rol ==="
+  ansible.builtin.debug:
+    msg: "Ejecutando validaciones post-configuración de RLIMENGANO..."
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 1: Interfaces de red
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Interfaces y direcciones IP actuales"
+  ansible.builtin.command: ip -br addr show
+  register: val_interfaces
+  changed_when: false
+  tags: validation
+
+- name: "VALIDATION | Mostrar interfaces"
+  ansible.builtin.debug:
+    msg: "{{ val_interfaces.stdout_lines }}"
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 2: Tabla de rutas
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Tabla de rutas actual"
+  ansible.builtin.command: ip route show
+  register: val_routes
+  changed_when: false
+  tags: validation
+
+- name: "VALIDATION | Mostrar rutas"
+  ansible.builtin.debug:
+    msg: "{{ val_routes.stdout_lines }}"
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 3: sysctl ip_forward
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Verificar IPv4 Forwarding"
+  ansible.builtin.command: sysctl net.ipv4.ip_forward
+  register: val_forward
+  changed_when: false
+  tags: validation
+
+- name: "VALIDATION | Resultado IPv4 Forwarding"
+  ansible.builtin.debug:
+    msg: "{{ val_forward.stdout }}"
+  tags: validation
+
+- name: "VALIDATION | ASSERT: IPv4 Forwarding debe estar en 1"
+  ansible.builtin.assert:
+    that:
+      - "'net.ipv4.ip_forward = 1' in val_forward.stdout"
+    fail_msg: "FALLO: IPv4 Forwarding NO activo."
+    success_msg: "OK: IPv4 Forwarding activo."
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 4: nftables ruleset
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Ruleset nftables completo"
+  ansible.builtin.command: nft list ruleset
+  register: val_nft
+  changed_when: false
+  tags: validation
+
+- name: "VALIDATION | Mostrar nftables ruleset"
+  ansible.builtin.debug:
+    msg: "{{ val_nft.stdout_lines }}"
+  tags: validation
+
+- name: "VALIDATION | ASSERT: NAT masquerade en nftables"
+  ansible.builtin.assert:
+    that:
+      - "'masquerade' in val_nft.stdout"
+    fail_msg: "FALLO: NAT masquerade no encontrado en nftables."
+    success_msg: "OK: NAT masquerade presente en nftables."
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 5: Ping a Internet (desde RLIMENGANO)
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Ping a 8.8.8.8 (prueba de conectividad WAN)"
+  ansible.builtin.command: ping -c 4 -W 5 8.8.8.8
+  register: val_ping
+  changed_when: false
+  failed_when: false
+  tags: validation
+
+- name: "VALIDATION | Resultado: Ping a 8.8.8.8"
+  ansible.builtin.assert:
+    that:
+      - val_ping.rc == 0
+    fail_msg: >
+      FALLO: Sin conectividad a 8.8.8.8.
+      Verificar ens34 DHCP y gateway.
+    success_msg: "OK: Conectividad a Internet (8.8.8.8) desde RLIMENGANO."
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 6: Prueba HTTP/HTTPS
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Prueba HTTP a google.com"
+  ansible.builtin.command: curl -I --max-time 15 -s -o /dev/null -w "%{http_code}" https://google.com
+  register: val_curl
+  changed_when: false
+  failed_when: false
+  tags: validation
+
+- name: "VALIDATION | Resultado: HTTP a google.com"
+  ansible.builtin.debug:
+    msg: >
+      HTTP google.com: {{ val_curl.stdout }}
+      {{ 'CONECTIVIDAD HTTPS OK' if val_curl.stdout in ['200','301','302']
+         else 'Revisar DNS/routing' }}
+  tags: validation
+
+# -----------------------------------------------------------------------------
+# Validación 7: Resumen ejecutivo
+# -----------------------------------------------------------------------------
+- name: "VALIDATION | Resumen ejecutivo de validaciones"
+  ansible.builtin.debug:
+    msg:
+      - "======================================================="
+      - "  RESUMEN FINAL - RLIMENGANO"
+      - "======================================================="
+      - "  Hostname      : {{ ansible_hostname }}"
+      - "  ens34 IP      : WAN/DHCP (ver ip addr show ens34)"
+      - "  ens35 IP      : {{ lan_ip }}/{{ lan_prefix }}"
+      - "  IP Forward    : {{ val_forward.stdout }}"
+      - "  NAT masq.     : {{ 'ACTIVO' if 'masquerade' in val_nft.stdout else 'NO ENCONTRADO' }}"
+      - "  Ping 8.8.8.8  : {{ 'OK' if val_ping.rc == 0 else 'FALLO' }}"
+      - "  HTTPS Google  : {{ val_curl.stdout }}"
+      - "======================================================="
+  tags: validation

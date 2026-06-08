@@ -1,0 +1,56 @@
+---
+# ============================================================
+# playbooks/site.yml
+# PLAYBOOK MAESTRO - Despliega toda la configuración de red
+# ============================================================
+# Uso:
+#   ansible-playbook playbooks/site.yml
+#   ansible-playbook playbooks/site.yml --tags "common,interfaces"
+#   ansible-playbook playbooks/site.yml --limit R1
+# ============================================================
+
+- name: "SITE | Configuración Base - Todos los dispositivos Cisco"
+  hosts: all_cisco
+  gather_facts: false
+  roles:
+    - role: common
+      tags: [common]
+    - role: user_management
+      tags: [users]
+    - role: security_hardening
+      tags: [security]
+
+- name: "SITE | Configuración de Interfaces"
+  hosts: all_cisco
+  gather_facts: false
+  roles:
+    - role: interfaces
+      tags: [interfaces]
+
+- name: "SITE | Configuración de Enrutamiento"
+  hosts: all_routers
+  gather_facts: false
+  roles:
+    - role: routing
+      tags: [routing]
+
+- name: "SITE | Configuración de ACLs"
+  hosts: all_cisco
+  gather_facts: false
+  roles:
+    - role: acl
+      tags: [acl]
+
+- name: "SITE | Backup de configuraciones"
+  hosts: all_cisco
+  gather_facts: false
+  roles:
+    - role: backup
+      tags: [backup]
+
+- name: "SITE | Validación y monitoreo final"
+  hosts: all_cisco
+  gather_facts: false
+  roles:
+    - role: monitoring
+      tags: [monitoring]

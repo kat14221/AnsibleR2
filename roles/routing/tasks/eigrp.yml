@@ -1,0 +1,33 @@
+---
+# ============================================================
+# roles/routing/tasks/eigrp.yml
+# Configuración de EIGRP
+# ============================================================
+
+- name: "EIGRP | Configurar proceso EIGRP"
+  cisco.ios.ios_config:
+    lines:
+      - "router eigrp {{ eigrp.asn }}"
+
+- name: "EIGRP | Anunciar redes"
+  cisco.ios.ios_config:
+    parents: "router eigrp {{ eigrp.asn }}"
+    lines:
+      - "network {{ item.network }} {{ item.wildcard }}"
+  loop: "{{ eigrp.networks | default([]) }}"
+
+- name: "EIGRP | Deshabilitar auto-summary"
+  cisco.ios.ios_config:
+    parents: "router eigrp {{ eigrp.asn }}"
+    lines:
+      - "no auto-summary"
+
+- name: "EIGRP | Verificar vecinos EIGRP"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip eigrp neighbors"
+  register: eigrp_neighbors
+
+- name: "EIGRP | Mostrar vecinos"
+  ansible.builtin.debug:
+    var: eigrp_neighbors.stdout_lines

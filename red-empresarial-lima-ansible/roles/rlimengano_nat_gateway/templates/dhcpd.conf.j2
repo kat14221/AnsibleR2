@@ -1,0 +1,75 @@
+{# =============================================================================
+   TEMPLATE: dhcpd.conf.j2
+   Genera la configuración del servidor DHCP isc-dhcp-server.
+   Solo se usa si enable_dhcp_isp2 = true.
+   
+   Archivo de destino: /etc/dhcp/dhcpd.conf
+   
+   RANGO: {{ dhcp_range_start }} - {{ dhcp_range_end }}
+   GATEWAY: {{ dhcp_gateway }} (= IP de ens35)
+   DNS: {{ dhcp_dns | join(', ') }}
+   
+   NOTA: Las IPs 10.250.20.11 (RLIM1) y 10.250.20.12 (RLIM2)
+   están fuera del rango DHCP (que empieza en .100) para no conflictuar.
+   ============================================================================= #}
+# ===========================================================================
+# DHCPD.CONF - Servidor DHCP para ENG-VM NETWORK (ens35)
+# ===========================================================================
+# Generado automáticamente por Ansible
+# Host     : {{ rlimengano_hostname }}
+# Red LAN  : {{ lan_network }}
+# Escucha  : {{ lan_interface }}
+# Fecha    : {{ ansible_date_time.iso8601 }}
+# NO EDITAR MANUALMENTE - Será sobreescrito por Ansible
+# ===========================================================================
+
+# Configuración global del servidor DHCP
+default-lease-time 43200;     # 12 horas en segundos
+max-lease-time 86400;         # 24 horas máximo
+authoritative;                # Este servidor es autoritativo para la subred
+log-facility local7;
+
+# DNS: Los clientes usarán DNS de Google y Cloudflare
+option domain-name-servers {{ dhcp_dns | join(', ') }};
+
+# ===========================================================================
+# SUBRED: {{ lan_network }}
+# Gateway: {{ dhcp_gateway }} (ens35 de RLIMENGANO)
+# ===========================================================================
+subnet {{ lan_network | ipaddr('network') }} netmask {{ lan_network | ipaddr('netmask') }} {
+    # Rango de IPs disponibles para asignación dinámica
+    # NOTA: Las IPs .11 (RLIM1) y .12 (RLIM2) son estáticas y están FUERA de este rango.
+    range {{ dhcp_range_start }} {{ dhcp_range_end }};
+
+    # Gateway por defecto = ens35 de RLIMENGANO
+    option routers {{ dhcp_gateway }};
+
+    # DNS externos
+    option domain-name-servers {{ dhcp_dns | join(', ') }};
+
+    # Duración del lease
+    default-lease-time 43200;
+    max-lease-time 86400;
+
+    # Nombre del dominio (opcional, para búsqueda de nombres)
+    option domain-name "lab.local";
+}
+
+# ===========================================================================
+# HOSTS FIJOS (reservas estáticas por MAC)
+# Estas reservas son OPCIONALES y sirven para documentación.
+# RLIM1 y RLIM2 configuran sus IPs de forma estática, no por DHCP.
+# Si en el futuro se desea hacer reservas por MAC, descomentar y ajustar:
+# ===========================================================================
+#
+# host RLIM1-PRINCIPAL {
+#     hardware ethernet <MAC-de-ens-WAN2-RLIM1>;
+#     fixed-address {{ rlim1_wan2_ip }};
+#     option routers {{ dhcp_gateway }};
+# }
+#
+# host RLIM2-SECUNDARIO {
+#     hardware ethernet <MAC-de-ens-WAN2-RLIM2>;
+#     fixed-address {{ rlim2_wan2_ip }};
+#     option routers {{ dhcp_gateway }};
+# }

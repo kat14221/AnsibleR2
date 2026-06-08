@@ -1,0 +1,40 @@
+---
+# ============================================================
+# roles/routing/tasks/ospf.yml
+# Configuración de OSPF
+# ============================================================
+
+- name: "OSPF | Configurar proceso OSPF y Router-ID"
+  cisco.ios.ios_ospfv2:
+    config:
+      processes:
+        - process_id: "{{ ospf.process_id }}"
+          router_id: "{{ ospf.router_id }}"
+          passive_interfaces:
+            default: false
+    state: merged
+
+- name: "OSPF | Anunciar redes"
+  cisco.ios.ios_config:
+    parents: "router ospf {{ ospf.process_id }}"
+    lines:
+      - "network {{ item.network }} {{ item.wildcard }} area {{ item.area }}"
+  loop: "{{ ospf.networks }}"
+
+- name: "OSPF | Configurar interfaces pasivas (si aplica)"
+  cisco.ios.ios_config:
+    parents: "router ospf {{ ospf.process_id }}"
+    lines:
+      - "passive-interface {{ item }}"
+  loop: "{{ ospf.passive_interfaces | default([]) }}"
+  when: ospf.passive_interfaces is defined
+
+- name: "OSPF | Verificar vecinos OSPF"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip ospf neighbor"
+  register: ospf_neighbors
+
+- name: "OSPF | Mostrar vecinos"
+  ansible.builtin.debug:
+    var: ospf_neighbors.stdout_lines

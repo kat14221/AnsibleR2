@@ -1,0 +1,99 @@
+---
+# =============================================================================
+# ROLE: linux_common - tasks/main.yml
+# =============================================================================
+# Tareas comunes para cualquier VM Linux del proyecto.
+# Configura: hostname, zona horaria, paquetes base, actualizaciones.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# BLOQUE 1: Configuración del Hostname
+# -----------------------------------------------------------------------------
+- name: "COMMON | Configurar hostname del sistema"
+  ansible.builtin.hostname:
+    name: "{{ rlimengano_hostname }}"
+    use: systemd
+  notify: "restart systemd-hostnamed"
+  tags: hostname
+
+- name: "COMMON | Configurar /etc/hostname"
+  ansible.builtin.copy:
+    content: "{{ rlimengano_hostname }}\n"
+    dest: /etc/hostname
+    owner: root
+    group: root
+    mode: "0644"
+  tags: hostname
+
+- name: "COMMON | Configurar /etc/hosts con el hostname"
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1\t{{ rlimengano_hostname }}"
+    state: present
+    backup: true
+  tags: hostname
+
+- name: "COMMON | Verificar que el hostname fue aplicado"
+  ansible.builtin.command: hostname
+  register: hostname_check
+  changed_when: false
+  tags: hostname
+
+- name: "COMMON | Resultado del hostname"
+  ansible.builtin.debug:
+    msg: "Hostname actual del sistema: {{ hostname_check.stdout }}"
+  tags: hostname
+
+# -----------------------------------------------------------------------------
+# BLOQUE 2: Zona Horaria
+# -----------------------------------------------------------------------------
+- name: "COMMON | Configurar zona horaria"
+  community.general.timezone:
+    name: "{{ timezone }}"
+  tags: timezone
+
+# -----------------------------------------------------------------------------
+# BLOQUE 3: Instalación de paquetes base
+# -----------------------------------------------------------------------------
+- name: "COMMON | Actualizar cache de APT"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600   # No actualizar si el cache tiene menos de 1 hora
+  tags: packages
+
+- name: "COMMON | Instalar paquetes esenciales"
+  ansible.builtin.apt:
+    name:
+      # Herramientas de red
+      - iproute2
+      - iputils-ping
+      - curl
+      - wget
+      - net-tools
+      - traceroute
+      - dnsutils
+      # Seguridad y firewall
+      - nftables
+      # Monitoreo y diagnóstico
+      - htop
+      - tcpdump
+      - lsof
+      # Utilidades de sistema
+      - vim
+      - less
+      - rsync
+      - ca-certificates
+      - gnupg
+      - lsb-release
+    state: present
+  tags: packages
+
+# -----------------------------------------------------------------------------
+# BLOQUE 4: Asegurar que nftables esté habilitado en el arranque
+# -----------------------------------------------------------------------------
+- name: "COMMON | Habilitar nftables al inicio del sistema"
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+  tags: packages

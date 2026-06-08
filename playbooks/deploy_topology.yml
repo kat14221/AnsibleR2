@@ -1,0 +1,89 @@
+---
+# ============================================================
+# playbooks/deploy_topology.yml
+# Despliegue completo de la topología de red desde cero
+# ============================================================
+# Uso:
+#   ansible-playbook playbooks/deploy_topology.yml
+#   ansible-playbook playbooks/deploy_topology.yml --check (modo dry-run)
+# ============================================================
+
+- name: "DEPLOY | Fase 1 - Configuración base y usuarios"
+  hosts: all_cisco
+  gather_facts: false
+  serial: 1
+
+  roles:
+    - role: common
+    - role: user_management
+
+  post_tasks:
+    - name: "FASE 1 completada"
+      ansible.builtin.debug:
+        msg: "✅ Fase 1 completada en {{ inventory_hostname }}: Common + Usuarios"
+
+- name: "DEPLOY | Fase 2 - Hardening de seguridad"
+  hosts: all_cisco
+  gather_facts: false
+
+  roles:
+    - role: security_hardening
+
+  post_tasks:
+    - name: "FASE 2 completada"
+      ansible.builtin.debug:
+        msg: "✅ Fase 2 completada en {{ inventory_hostname }}: Hardening"
+
+- name: "DEPLOY | Fase 3 - Configuración de interfaces"
+  hosts: all_cisco
+  gather_facts: false
+
+  roles:
+    - role: interfaces
+
+  post_tasks:
+    - name: "FASE 3 completada"
+      ansible.builtin.debug:
+        msg: "✅ Fase 3 completada en {{ inventory_hostname }}: Interfaces"
+
+- name: "DEPLOY | Fase 4 - Protocolos de enrutamiento"
+  hosts: all_routers
+  gather_facts: false
+
+  roles:
+    - role: routing
+
+  post_tasks:
+    - name: "FASE 4 completada"
+      ansible.builtin.debug:
+        msg: "✅ Fase 4 completada en {{ inventory_hostname }}: Routing"
+
+- name: "DEPLOY | Fase 5 - ACLs y políticas"
+  hosts: all_cisco
+  gather_facts: false
+
+  roles:
+    - role: acl
+
+  post_tasks:
+    - name: "FASE 5 completada"
+      ansible.builtin.debug:
+        msg: "✅ Fase 5 completada en {{ inventory_hostname }}: ACLs"
+
+- name: "DEPLOY | Fase 6 - Backup inicial y validación"
+  hosts: all_cisco
+  gather_facts: true
+
+  roles:
+    - role: backup
+    - role: monitoring
+
+  post_tasks:
+    - name: "DESPLIEGUE COMPLETO"
+      ansible.builtin.debug:
+        msg:
+          - "══════════════════════════════════════════════════"
+          - " ✅ TOPOLOGÍA DESPLEGADA EXITOSAMENTE"
+          - " Dispositivo: {{ inventory_hostname }}"
+          - " Backup guardado en: {{ backup_dir }}/{{ inventory_hostname }}/"
+          - "══════════════════════════════════════════════════"

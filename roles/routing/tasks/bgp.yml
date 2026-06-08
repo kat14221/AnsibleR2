@@ -1,0 +1,41 @@
+---
+# ============================================================
+# roles/routing/tasks/bgp.yml
+# Configuración de BGP
+# ============================================================
+
+- name: "BGP | Configurar proceso BGP"
+  cisco.ios.ios_bgp_global:
+    config:
+      as_number: "{{ bgp.asn }}"
+      router_id: "{{ bgp.router_id | default(ospf.router_id) }}"
+      bgp:
+        log_neighbor_changes: true
+    state: merged
+
+- name: "BGP | Configurar vecinos BGP"
+  cisco.ios.ios_config:
+    parents: "router bgp {{ bgp.asn }}"
+    lines:
+      - "neighbor {{ item.neighbor_ip }} remote-as {{ item.remote_asn }}"
+      - "neighbor {{ item.neighbor_ip }} description {{ item.description | default('BGP-Peer') }}"
+  loop: "{{ bgp.neighbors | default([]) }}"
+  when: bgp.neighbors is defined
+
+- name: "BGP | Anunciar redes BGP"
+  cisco.ios.ios_config:
+    parents: "router bgp {{ bgp.asn }}"
+    lines:
+      - "network {{ item.network }} mask {{ item.mask }}"
+  loop: "{{ bgp.networks | default([]) }}"
+  when: bgp.networks is defined
+
+- name: "BGP | Verificar vecinos BGP"
+  cisco.ios.ios_command:
+    commands:
+      - "show bgp summary"
+  register: bgp_summary
+
+- name: "BGP | Mostrar resumen BGP"
+  ansible.builtin.debug:
+    var: bgp_summary.stdout_lines

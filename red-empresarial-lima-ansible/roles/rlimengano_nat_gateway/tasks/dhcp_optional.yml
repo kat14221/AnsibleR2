@@ -1,0 +1,99 @@
+---
+# =============================================================================
+# ROLE: rlimengano_nat_gateway - tasks/dhcp_optional.yml
+# =============================================================================
+# DHCP opcional en ens35 (ENG-VM NETWORK).
+#
+# COMPORTAMIENTO:
+#   - enable_dhcp_isp2: false → No instala DHCP (RLIM1 y RLIM2 usan IPs estáticas)
+#   - enable_dhcp_isp2: true  → Instala isc-dhcp-server con rango 10.250.20.100-200
+#
+# Las IPs estáticas de clientes son:
+#   RLIM1-PRINCIPAL  = 10.250.20.11 (configurada manualmente en RLIM1)
+#   RLIM2-SECUNDARIO = 10.250.20.12 (configurada manualmente en RLIM2)
+# El rango DHCP empieza en .100 para no conflictuar.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# BLOQUE: Instalar y configurar DHCP (solo si enable_dhcp_isp2 es true)
+# -----------------------------------------------------------------------------
+- name: "DHCP | Bloque de configuración DHCP (condicional)"
+  when: enable_dhcp_isp2 | bool
+  block:
+
+    - name: "DHCP | Instalar isc-dhcp-server"
+      ansible.builtin.apt:
+        name: isc-dhcp-server
+        state: present
+        update_cache: true
+      tags: dhcp
+
+    - name: "DHCP | Configurar interfaz de escucha del servidor DHCP"
+      ansible.builtin.lineinfile:
+        path: /etc/default/isc-dhcp-server
+        regexp: '^INTERFACESv4='
+        line: 'INTERFACESv4="{{ lan_interface }}"'
+        state: present
+        backup: true
+      notify: "restart isc-dhcp-server"
+      tags: dhcp
+
+    - name: "DHCP | Generar configuración dhcpd.conf desde template"
+      ansible.builtin.template:
+        src: "dhcpd.conf.j2"
+        dest: /etc/dhcp/dhcpd.conf
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: "restart isc-dhcp-server"
+      tags: dhcp
+
+    - name: "DHCP | Habilitar y arrancar isc-dhcp-server"
+      ansible.builtin.systemd:
+        name: isc-dhcp-server
+        state: started
+        enabled: true
+      tags: dhcp
+
+    - name: "DHCP | Verificar que el servicio DHCP está activo"
+      ansible.builtin.command: systemctl is-active isc-dhcp-server
+      register: dhcp_service_status
+      changed_when: false
+      tags: dhcp
+
+    - name: "DHCP | Resultado: Servicio DHCP"
+      ansible.builtin.debug:
+        msg: "Servicio isc-dhcp-server: {{ dhcp_service_status.stdout }}"
+      tags: dhcp
+
+# -----------------------------------------------------------------------------
+# BLOQUE: Deshabilitar DHCP si enable_dhcp_isp2 es false
+# -----------------------------------------------------------------------------
+- name: "DHCP | Verificar si isc-dhcp-server está instalado (para deshabilitarlo si aplica)"
+  ansible.builtin.shell: dpkg -l isc-dhcp-server 2>/dev/null | grep -c '^ii' || true
+  register: dhcp_installed_check
+  changed_when: false
+  when: not (enable_dhcp_isp2 | bool)
+  tags: dhcp
+
+- name: "DHCP | Detener y deshabilitar isc-dhcp-server si está instalado y DHCP está deshabilitado"
+  ansible.builtin.systemd:
+    name: isc-dhcp-server
+    state: stopped
+    enabled: false
+  when:
+    - not (enable_dhcp_isp2 | bool)
+    - dhcp_installed_check is defined
+    - dhcp_installed_check.stdout | int >= 1
+  ignore_errors: true   # Puede no existir el servicio en sistemas limpios
+  tags: dhcp
+
+- name: "DHCP | Informar estado de DHCP"
+  ansible.builtin.debug:
+    msg: >
+      DHCP en ens35:
+      {{ 'HABILITADO - Rango: ' + dhcp_range_start + ' - ' + dhcp_range_end
+         if enable_dhcp_isp2 | bool
+         else 'DESHABILITADO (modo producción: RLIM1 y RLIM2 usan IPs estáticas)' }}
+  tags: dhcp

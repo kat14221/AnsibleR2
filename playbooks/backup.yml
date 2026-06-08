@@ -1,0 +1,43 @@
+---
+# ============================================================
+# playbooks/backup.yml
+# Backup de configuraciones de todos los dispositivos
+# ============================================================
+# Uso:
+#   ansible-playbook playbooks/backup.yml
+#   ansible-playbook playbooks/backup.yml --limit R1
+# ============================================================
+
+- name: "BACKUP | Respaldar configuraciones de red"
+  hosts: all_cisco
+  gather_facts: true
+  serial: 5
+
+  pre_tasks:
+    - name: "Crear directorio de backups"
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+
+  roles:
+    - role: backup
+      tags: [backup]
+
+  post_tasks:
+    - name: "Listar archivos de backup generados"
+      ansible.builtin.find:
+        paths: "{{ backup_dir }}"
+        patterns: "*.cfg"
+        recurse: true
+      register: backup_files
+      delegate_to: localhost
+      run_once: true
+
+    - name: "Resumen de backups"
+      ansible.builtin.debug:
+        msg: "✅ Total backups generados: {{ backup_files.files | length }}"
+      delegate_to: localhost
+      run_once: true

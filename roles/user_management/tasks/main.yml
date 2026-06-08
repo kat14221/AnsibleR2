@@ -1,0 +1,37 @@
+---
+# ============================================================
+# roles/user_management/tasks/main.yml
+# Gestión de usuarios locales en dispositivos de red
+# ============================================================
+
+- name: "USERS | Crear usuarios locales con privilegios"
+  cisco.ios.ios_user:
+    name: "{{ item.username }}"
+    privilege: "{{ item.privilege }}"
+    configured_password: "{{ vault_ansible_password if item.privilege == 15 else vault_readonly_password }}"
+    password_type: secret
+    algorithm_type: "{{ item.algorithm | default('sha256') }}"
+    state: present
+  loop: "{{ local_users }}"
+  no_log: true
+  tags: [users, create]
+
+- name: "USERS | Verificar usuarios configurados"
+  cisco.ios.ios_command:
+    commands:
+      - "show running-config | include username"
+  register: user_list
+  tags: [users, verify]
+
+- name: "USERS | Mostrar usuarios"
+  ansible.builtin.debug:
+    var: user_list.stdout_lines
+  tags: [users, verify]
+
+- name: "USERS | Eliminar usuarios no autorizados"
+  cisco.ios.ios_user:
+    name: "{{ item }}"
+    state: absent
+  loop: "{{ users_to_remove | default([]) }}"
+  when: users_to_remove is defined
+  tags: [users, remove]

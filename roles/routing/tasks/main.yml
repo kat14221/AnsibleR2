@@ -1,0 +1,32 @@
+---
+# ============================================================
+# roles/routing/tasks/main.yml
+# Orquestador de protocolos de enrutamiento
+# ============================================================
+
+- name: "ROUTING | Configurar OSPF"
+  ansible.builtin.import_tasks: ospf.yml
+  when: ospf is defined and ospf.process_id is defined
+  tags: [routing, ospf]
+
+- name: "ROUTING | Configurar BGP"
+  ansible.builtin.import_tasks: bgp.yml
+  when: bgp is defined and bgp.enabled | default(false)
+  tags: [routing, bgp]
+
+- name: "ROUTING | Configurar EIGRP"
+  ansible.builtin.import_tasks: eigrp.yml
+  when: eigrp is defined and eigrp.enabled | default(false)
+  tags: [routing, eigrp]
+
+- name: "ROUTING | Verificar tabla de enrutamiento"
+  cisco.ios.ios_command:
+    commands:
+      - "show ip route"
+  register: routing_table
+  tags: [routing, verify]
+
+- name: "ROUTING | Mostrar resumen de rutas"
+  ansible.builtin.debug:
+    msg: "{{ routing_table.stdout_lines }}"
+  tags: [routing, verify]

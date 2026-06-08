@@ -1,0 +1,29 @@
+---
+# ============================================================
+# inventories/lab/group_vars/cisco_ios.yml
+# Variables específicas para dispositivos Cisco IOS
+# ============================================================
+
+ansible_network_os:    cisco.ios.ios
+ansible_connection:    ansible.netcommon.network_cli
+ansible_become:        true
+ansible_become_method: enable
+
+# Versión mínima soportada
+ios_min_version: "15.0"
+
+# Configuración de interfaces por defecto
+interface_defaults:
+  description_prefix: "LAB"
+  shutdown: false
+  duplex: auto
+  speed: auto
+
+# Parámetros de spanning-tree por defecto
+spanning_tree_mode: rapid-pvst
+
+# Configuración de CDP
+cdp_enabled: true
+
+# LLDP
+lldp_enabled: false

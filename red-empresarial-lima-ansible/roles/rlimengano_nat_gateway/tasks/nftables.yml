@@ -1,0 +1,156 @@
+---
+# =============================================================================
+# ROLE: rlimengano_nat_gateway - tasks/nftables.yml
+# =============================================================================
+# Configura nftables para la función de Router NAT (ISP secundario simulado).
+#
+# DISEÑO MINIMALISTA — RLIMENGANO no es firewall de perímetro:
+#   - input:       política ACCEPT (no se bloquea gestión ni SSH por ens34)
+#   - forward:     política DROP, solo permite LAN→WAN y retorno established
+#   - postrouting: masquerade 10.250.20.0/24 → ens34
+# =============================================================================
+#
+# NOTA SOBRE validate:
+# El parámetro validate del módulo ansible.builtin.template usa un archivo
+# temporal (%s) que nft no puede verificar si tiene directivas 'include'.
+# Por eso la validación de sintaxis se hace con un paso separado DESPUÉS
+# de escribir el archivo en su ruta definitiva.
+
+# -----------------------------------------------------------------------------
+# PASO 1: Verificar que nftables está instalado
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Verificar que nftables está instalado"
+  ansible.builtin.package:
+    name: nftables
+    state: present
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 2: Crear directorio para configuraciones personalizadas
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Crear directorio /etc/nftables.d/"
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 3: Backup de la configuración nftables actual
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Backup de configuración nftables actual"
+  ansible.builtin.shell: |
+    BACKUP_FILE="{{ backup_dir }}/nftables-backup-{{ ansible_date_time.iso8601_basic_short }}.conf"
+    if nft list ruleset 2>/dev/null | head -1; then
+      nft list ruleset > "${BACKUP_FILE}"
+      echo "Backup guardado en: ${BACKUP_FILE}"
+    else
+      echo "nftables sin reglas actuales, no hay backup que hacer."
+    fi
+  register: nftables_backup
+  changed_when: false
+  tags: nftables
+
+- name: "NFTABLES | Resultado del backup"
+  ansible.builtin.debug:
+    msg: "{{ nftables_backup.stdout_lines }}"
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 4: Generar el archivo de configuración nftables principal
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Generar /etc/nftables.conf desde template"
+  ansible.builtin.template:
+    src: "rlimengano-nftables.conf.j2"
+    dest: "{{ nftables_config_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    backup: true
+    # NOTA: No se usa 'validate' aquí porque nft -c -f %s opera sobre un
+    # archivo temporal y puede fallar si el archivo usa paths absolutos.
+    # La verificación de sintaxis se hace en el paso siguiente.
+  notify:
+    - "restart nftables"
+    - "enable nftables"
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 4b: Verificar sintaxis del archivo recién generado
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Verificar sintaxis del archivo nftables generado"
+  ansible.builtin.command: nft -c -f {{ nftables_config_file }}
+  register: nft_syntax_check
+  changed_when: false
+  tags: nftables
+
+- name: "NFTABLES | Resultado de verificación sintáctica"
+  ansible.builtin.debug:
+    msg: "Sintaxis nftables OK: {{ nftables_config_file }}"
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 5: Aplicar la configuración inmediatamente (sin esperar al handler)
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Aplicar configuración nftables inmediatamente"
+  ansible.builtin.command: nft -f {{ nftables_config_file }}
+  register: nft_apply
+  changed_when: nft_apply.rc == 0
+  tags: nftables
+
+- name: "NFTABLES | Habilitar y arrancar servicio nftables"
+  ansible.builtin.systemd:
+    name: nftables
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 6: Flush handlers para asegurar el estado
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Flush handlers"
+  ansible.builtin.meta: flush_handlers
+  tags: nftables
+
+# -----------------------------------------------------------------------------
+# PASO 7: Verificar que el ruleset fue cargado correctamente
+# -----------------------------------------------------------------------------
+- name: "NFTABLES | Listar ruleset actual para verificación"
+  ansible.builtin.command: nft list ruleset
+  register: nft_ruleset_verify
+  changed_when: false
+  tags: nftables
+
+- name: "NFTABLES | Mostrar ruleset activo"
+  ansible.builtin.debug:
+    msg: "{{ nft_ruleset_verify.stdout_lines }}"
+  tags: nftables
+
+- name: "NFTABLES | Verificar que NAT masquerade existe en el ruleset"
+  ansible.builtin.assert:
+    that:
+      - "'masquerade' in nft_ruleset_verify.stdout"
+    fail_msg: >
+      ERROR: Regla NAT masquerade NO encontrada en el ruleset de nftables.
+      Revisar el template rlimengano-nftables.conf.j2
+    success_msg: "OK: NAT masquerade encontrado en el ruleset de nftables."
+  tags: nftables
+
+- name: "NFTABLES | Verificar que el servicio nftables está activo"
+  ansible.builtin.command: systemctl is-active nftables
+  register: nftables_service_status
+  changed_when: false
+  tags: nftables
+
+- name: "NFTABLES | Resultado del servicio nftables"
+  ansible.builtin.assert:
+    that:
+      - nftables_service_status.stdout == "active"
+    fail_msg: >
+      ERROR: El servicio nftables NO está activo.
+      Estado: {{ nftables_service_status.stdout }}
+    success_msg: "OK: Servicio nftables activo y corriendo."
+  tags: nftables

@@ -1,0 +1,59 @@
+---
+# ============================================================
+# host_vars/R1.yml - Variables específicas del Router R1
+# ============================================================
+
+hostname: "R1-CORE"
+device_description: "Router Core - Hub de la topología"
+
+# Interfaces de R1
+interfaces:
+  - name: GigabitEthernet0/0
+    description: "Enlace a R2"
+    ip_address: "10.0.12.1"
+    prefix_length: "30"
+    shutdown: false
+
+  - name: GigabitEthernet0/1
+    description: "Enlace a R3"
+    ip_address: "10.0.13.1"
+    prefix_length: "30"
+    shutdown: false
+
+  - name: GigabitEthernet0/2
+    description: "Enlace WAN - Firewall"
+    ip_address: "192.168.100.11"
+    prefix_length: "24"
+    shutdown: false
+
+  - name: Loopback0
+    description: "Loopback de gestión"
+    ip_address: "1.1.1.1"
+    prefix_length: "32"
+    shutdown: false
+
+# OSPF en R1
+ospf:
+  process_id: 1
+  router_id: "1.1.1.1"
+  networks:
+    - network: "10.0.12.0"
+      wildcard: "0.0.0.3"
+      area: 0
+    - network: "10.0.13.0"
+      wildcard: "0.0.0.3"
+      area: 0
+    - network: "1.1.1.1"
+      wildcard: "0.0.0.0"
+      area: 0
+
+# BGP (si aplica)
+bgp:
+  enabled: false
+  asn: 65001
+
+# ACLs a aplicar
+acls:
+  - name: "ACL_MGMT_IN"
+    direction: "in"
+    interface: "GigabitEthernet0/2"

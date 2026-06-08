@@ -1,0 +1,54 @@
+---
+# ============================================================
+# host_vars/FW1.yml - Variables específicas del Firewall FW1
+# ============================================================
+
+hostname: "FW1-PERIMETER"
+device_description: "Firewall Perimetral - Fortinet"
+
+# Interfaces del Firewall
+firewall_interfaces:
+  - name: "wan1"
+    description: "WAN - Salida a Internet"
+    ip_address: "dhcp"
+    zone: "WAN"
+
+  - name: "internal"
+    description: "LAN Interna"
+    ip_address: "192.168.100.1"
+    prefix_length: "24"
+    zone: "LAN"
+
+  - name: "dmz"
+    description: "Zona DMZ"
+    ip_address: "172.16.0.1"
+    prefix_length: "24"
+    zone: "DMZ"
+
+# Políticas de firewall
+firewall_policies:
+  - name: "LAN_to_WAN"
+    src_intf: "internal"
+    dst_intf: "wan1"
+    src_addr: "all"
+    dst_addr: "all"
+    service: "ALL"
+    action: "accept"
+    nat: true
+    log: true
+
+  - name: "DENY_WAN_to_LAN"
+    src_intf: "wan1"
+    dst_intf: "internal"
+    src_addr: "all"
+    dst_addr: "all"
+    service: "ALL"
+    action: "deny"
+    log: true
+
+# Rutas estáticas
+static_routes:
+  - dst: "0.0.0.0/0"
+    gateway: "dhcp"
+    device: "wan1"
+    distance: 10

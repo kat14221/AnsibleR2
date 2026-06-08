@@ -1,0 +1,152 @@
+{# =============================================================================
+   TEMPLATE: rlimengano-nftables.conf.j2
+   Genera la configuración nftables de RLIMENGANO.
+
+   Archivo de destino: /etc/nftables.conf
+
+   ROL DEL DISPOSITIVO: Router NAT de ISP secundario simulado.
+   RLIMENGANO NO es un firewall de perímetro empresarial.
+
+   FUNCIÓN DE NFTABLES AQUÍ (únicamente):
+     1. Permitir forwarding LAN (ens35) → WAN (ens34)  [FWD-01]
+     2. Permitir retorno established/related WAN → LAN  [FWD-02]
+     3. Bloquear nuevas conexiones iniciadas desde WAN   [FWD-03]
+     4. NAT Masquerade: 10.250.20.0/24 sale por ens34   [NAT-01]
+
+   LO QUE NO HACE:
+     - NO restringe input por ens34 (es la interfaz de gestión)
+     - NO bloquea SSH desde 172.17.25.0/24 ni desde ninguna red
+     - NO limita ICMP de entrada
+     - NO aplica política DROP en input (evitar pérdida de acceso)
+
+   FLUJO NAT:
+     RLIM1/RLIM2 ({{ lan_network }})
+       → {{ lan_interface }} → RLIMENGANO → {{ wan_interface }} → Internet
+   ============================================================================= #}
+#!/usr/sbin/nft -f
+# ===========================================================================
+# NFTABLES - RLIMENGANO - Router NAT ISP Secundario Simulado
+# ===========================================================================
+# Generado automáticamente por Ansible
+# Proyecto  : {{ proyecto_nombre | default('Red Empresarial Lima') }}
+# Host      : {{ rlimengano_hostname }}
+# Fecha     : {{ ansible_date_time.iso8601 }}
+# WAN (Internet/gestión) : {{ wan_interface }} — DHCP desde VM Network
+# LAN (ENG-VM NETWORK)   : {{ lan_interface }} — {{ lan_ip }}/{{ lan_prefix }}
+# Red LAN                : {{ lan_network }}
+# NO EDITAR MANUALMENTE - Será sobreescrito por Ansible
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Limpiar todas las reglas antes de cargar las nuevas (garantiza idempotencia)
+# ---------------------------------------------------------------------------
+flush ruleset
+
+# ===========================================================================
+# TABLA: inet filter
+# Solo gestiona el forwarding entre ens35 (LAN) y ens34 (WAN).
+# El tráfico de entrada al propio RLIMENGANO no se restringe.
+# ===========================================================================
+table inet filter {
+
+    # -----------------------------------------------------------------------
+    # CADENA: input  —  POLÍTICA: ACCEPT
+    #
+    # Tráfico destinado al propio RLIMENGANO (SSH, ICMP, DHCP, etc.)
+    #
+    # DECISIÓN DE DISEÑO: política ACCEPT sin restricciones.
+    # ens34 entrega acceso de gestión SSH y es la salida real a Internet.
+    # Bloquear input aquí puede cortar el acceso a la VM si la IP DHCP
+    # de ens34 cambia o el administrador accede desde otra subred.
+    # RLIMENGANO no tiene función de firewall de borde: su rol es
+    # únicamente el de router NAT para el ISP secundario simulado.
+    # -----------------------------------------------------------------------
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        # Solo se descartan paquetes con estado de conexión completamente inválido
+        ct state invalid drop comment "Descartar paquetes de estado invalido"
+
+        # Todo lo demás se acepta:
+        #   - SSH desde 172.17.25.0/24 (gestión)
+        #   - ICMP/ping (diagnóstico)
+        #   - DHCP (renovación de IP en ens34)
+        #   - Cualquier otro tráfico administrativo legítimo
+    }
+
+    # -----------------------------------------------------------------------
+    # CADENA: forward  —  POLÍTICA: DROP
+    #
+    # Controla el tráfico que pasa A TRAVÉS de RLIMENGANO (entre interfaces).
+    # Solo el forwarding LAN↔WAN está permitido explícitamente.
+    # -----------------------------------------------------------------------
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        # -------------------------------------------------------------------
+        # [FWD-01] Descartar paquetes de estado inválido
+        # -------------------------------------------------------------------
+        ct state invalid drop comment "Descartar paquetes invalidos en forward"
+
+        # -------------------------------------------------------------------
+        # [FWD-02] Retorno WAN → LAN: tráfico de respuesta (established/related)
+        # Permite que las respuestas de Internet lleguen de vuelta a
+        # RLIM1 (10.250.20.11) y RLIM2 (10.250.20.12).
+        # -------------------------------------------------------------------
+        ct state established,related accept \
+            comment "Retorno WAN->LAN: respuestas a conexiones de la LAN"
+
+        # -------------------------------------------------------------------
+        # [FWD-03] LAN → WAN: RLIM1 y RLIM2 pueden salir a Internet
+        # Tráfico desde ens35 (ENG-VM NETWORK) hacia ens34 (VM Network/Internet).
+        # -------------------------------------------------------------------
+        iif "{{ lan_interface }}" oif "{{ wan_interface }}" accept \
+            comment "Forwarding LAN->WAN: {{ lan_network }} sale por {{ wan_interface }}"
+
+        # El tráfico nuevamente iniciado desde WAN → LAN queda bloqueado
+        # por la política DROP implícita de esta cadena.
+    }
+
+    # -----------------------------------------------------------------------
+    # CADENA: output  —  POLÍTICA: ACCEPT
+    # Tráfico generado por el propio RLIMENGANO (actualizaciones, DNS, etc.)
+    # -----------------------------------------------------------------------
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}
+
+# ===========================================================================
+# TABLA: ip nat
+# NAT/PAT para simular el ISP secundario (solo IPv4)
+# ===========================================================================
+table ip nat {
+
+    # -----------------------------------------------------------------------
+    # CADENA: prerouting
+    # Reservada para DNAT (port forwarding) si se necesita en el futuro.
+    # Ejemplo futuro: reenviar puerto externo a RLIM1:
+    #   iif "{{ wan_interface }}" tcp dport 8080 dnat to {{ rlim1_wan2_ip }}:80
+    # -----------------------------------------------------------------------
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+    }
+
+    # -----------------------------------------------------------------------
+    # CADENA: postrouting  —  NAT MASQUERADE
+    #
+    # SNAT dinámico: todo paquete de 10.250.20.0/24 que salga por ens34
+    # tendrá su IP origen reemplazada por la IP DHCP actual de ens34.
+    # Esto hace que RLIM1 y RLIM2 accedan a Internet apareciendo como
+    # la IP pública de RLIMENGANO (transparente para el ISP real).
+    # -----------------------------------------------------------------------
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+
+        # -------------------------------------------------------------------
+        # [NAT-01] MASQUERADE — corazón del ISP secundario simulado
+        # -------------------------------------------------------------------
+        ip saddr {{ lan_network }} oif "{{ wan_interface }}" masquerade \
+            comment "NAT Masquerade: {{ lan_network }} sale por {{ wan_interface }}"
+    }
+}
