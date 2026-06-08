@@ -25,7 +25,7 @@
 # Proyecto : {{ proyecto_nombre | default('Red Empresarial Lima') }}
 # Sede     : {{ proyecto_sede | default('Lima') }}
 # Rol      : ISP Secundario Simulado (NAT Gateway)
-# Fecha    : {{ ansible_date_time.iso8601 }}
+# Fecha    : {{ ansible_facts['date_time']['iso8601'] }}
 # NO EDITAR MANUALMENTE - Los cambios serán sobreescritos por Ansible.
 # ===========================================================================
 network:

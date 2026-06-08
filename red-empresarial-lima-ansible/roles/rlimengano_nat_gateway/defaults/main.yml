@@ -2,38 +2,52 @@
 # =============================================================================
 # ROLE: rlimengano_nat_gateway - defaults/main.yml
 # =============================================================================
-# Valores por defecto. Pueden sobreescribirse en host_vars/rlimengano.yml
-# o pasarse como variables extra en la línea de comandos.
+# Valores por defecto completos y seguros.
+# Cubren TODAS las variables usadas en tareas y templates del rol.
+# Pueden sobreescribirse en host_vars/rlimengano.yml.
+#
+# REGLA: Si una variable se usa en cualquier tarea o template del rol,
+#        debe tener un valor por defecto aquí.
 # =============================================================================
 
 # -----------------------------------------------------------------------
-# Identificación
+# Identidad
 # -----------------------------------------------------------------------
 rlimengano_hostname: "RLIMENGANO"
 
 # -----------------------------------------------------------------------
-# Interfaces de red
+# Interfaz WAN - ens34 (VM Network / Internet real del ESXi)
 # -----------------------------------------------------------------------
 wan_interface: "ens34"
+wan_mac: "00:0c:29:19:1b:7c"
+wan_mode: "dhcp"          # Siempre DHCP. Nunca cambiar a estática.
+
+# -----------------------------------------------------------------------
+# Interfaz LAN - ens35 (ENG-VM NETWORK / ISP secundario simulado)
+# -----------------------------------------------------------------------
 lan_interface: "ens35"
+lan_mac: "00:0c:29:19:1b:86"
 lan_ip: "10.250.20.1"
 lan_prefix: 24
+lan_prefix_full: "10.250.20.1/24"
 lan_network: "10.250.20.0/24"
 
 # -----------------------------------------------------------------------
-# NAT
+# Red de gestión SSH
+# -----------------------------------------------------------------------
+management_network: "172.17.25.0/24"
+
+# -----------------------------------------------------------------------
+# NAT/PAT
 # -----------------------------------------------------------------------
 nat_enabled: true
 nat_out_interface: "ens34"
 nat_inside_interface: "ens35"
 
 # -----------------------------------------------------------------------
-# Gestión
-# -----------------------------------------------------------------------
-management_network: "172.17.25.0/24"
-
-# -----------------------------------------------------------------------
-# DHCP opcional (deshabilitado por defecto)
+# DHCP opcional en ens35 (deshabilitado por defecto)
+# Cambiar a true solo si se necesitan IPs dinámicas en ENG-VM NETWORK.
+# RLIM1 (10.250.20.11) y RLIM2 (10.250.20.12) usan IPs estáticas.
 # -----------------------------------------------------------------------
 enable_dhcp_isp2: false
 dhcp_range_start: "10.250.20.100"
@@ -45,9 +59,21 @@ dhcp_dns:
   - "1.1.1.1"
 
 # -----------------------------------------------------------------------
+# Clientes estáticos documentados en ENG-VM NETWORK
+# -----------------------------------------------------------------------
+rlim1_nombre: "RLIM1-PRINCIPAL"
+rlim1_wan2_ip: "10.250.20.11"
+rlim1_wan2_prefix: "10.250.20.11/24"
+
+rlim2_nombre: "RLIM2-SECUNDARIO"
+rlim2_wan2_ip: "10.250.20.12"
+rlim2_wan2_prefix: "10.250.20.12/24"
+
+# -----------------------------------------------------------------------
 # Rutas de archivos de configuración
 # -----------------------------------------------------------------------
 backup_dir: "/root/backups/rlimengano"
 netplan_config_file: "/etc/netplan/99-rlimengano-netplan.yaml"
+netplan_config_dir: "/etc/netplan"
 nftables_config_file: "/etc/nftables.conf"
 nftables_custom_file: "/etc/nftables.d/rlimengano-nat.conf"

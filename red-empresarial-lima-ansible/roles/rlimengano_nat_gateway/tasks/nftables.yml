@@ -42,7 +42,7 @@
 # -----------------------------------------------------------------------------
 - name: "NFTABLES | Backup de configuración nftables actual"
   ansible.builtin.shell: |
-    BACKUP_FILE="{{ backup_dir }}/nftables-backup-{{ ansible_date_time.iso8601_basic_short }}.conf"
+    BACKUP_FILE="{{ backup_dir }}/nftables-backup-{{ ansible_facts['date_time']['epoch'] }}.conf"
     if nft list ruleset 2>/dev/null | head -1; then
       nft list ruleset > "${BACKUP_FILE}"
       echo "Backup guardado en: ${BACKUP_FILE}"

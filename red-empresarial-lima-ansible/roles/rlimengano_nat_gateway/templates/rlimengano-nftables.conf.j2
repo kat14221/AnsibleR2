@@ -30,7 +30,7 @@
 # Generado automáticamente por Ansible
 # Proyecto  : {{ proyecto_nombre | default('Red Empresarial Lima') }}
 # Host      : {{ rlimengano_hostname }}
-# Fecha     : {{ ansible_date_time.iso8601 }}
+# Fecha     : {{ ansible_facts['date_time']['iso8601'] }}
 # WAN (Internet/gestión) : {{ wan_interface }} — DHCP desde VM Network
 # LAN (ENG-VM NETWORK)   : {{ lan_interface }} — {{ lan_ip }}/{{ lan_prefix }}
 # Red LAN                : {{ lan_network }}

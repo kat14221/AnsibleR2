@@ -34,10 +34,10 @@
     - name: "VAL-01 | Resultado: Hostname"
       ansible.builtin.assert:
         that:
-          - current_hostname.stdout == rlimengano_hostname
+          - current_hostname.stdout == (rlimengano_hostname | default('RLIMENGANO'))
         fail_msg: >
           {{ fail_prefix }} Hostname incorrecto.
-          Esperado: {{ rlimengano_hostname }}
+          Esperado: {{ rlimengano_hostname | default('RLIMENGANO') }}
           Actual   : {{ current_hostname.stdout }}
         success_msg: >
           {{ ok_prefix }} Hostname correcto: {{ current_hostname.stdout }}

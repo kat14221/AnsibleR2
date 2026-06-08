@@ -26,7 +26,7 @@
 
 - name: "NETPLAN | Registrar timestamp para el backup"
   ansible.builtin.set_fact:
-    backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+    backup_timestamp: "{{ ansible_facts['date_time']['epoch'] }}"
   tags: netplan
 
 - name: "NETPLAN | Backup de todos los archivos Netplan actuales"

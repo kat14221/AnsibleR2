@@ -8,6 +8,10 @@
 #   ansible-playbook -i inventories/local/hosts.yml \
 #     playbooks/01_configurar_rlimengano.yml --ask-become-pass
 #
+# Dry-run (sin cambios):
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/01_configurar_rlimengano.yml --check --diff --ask-become-pass
+#
 # Requiere: ansible-galaxy collection install -r requirements.yml
 # =============================================================================
 
@@ -18,7 +22,7 @@
 
   pre_tasks:
     # -------------------------------------------------------------------------
-    # Verificación de seguridad: Confirmar que ejecutamos en el host correcto
+    # PRE-0: Verificar host correcto
     # -------------------------------------------------------------------------
     - name: "PRE | Verificar que el host de destino es RLIMENGANO"
       ansible.builtin.assert:
@@ -30,6 +34,32 @@
         success_msg: "OK: Ejecutando en el host correcto: {{ inventory_hostname }}"
       tags: always
 
+    # -------------------------------------------------------------------------
+    # PRE-1: Validar que todas las variables críticas de red están definidas
+    # Esto evita errores obscuros en tareas posteriores.
+    # -------------------------------------------------------------------------
+    - name: "PRE | Validar que las variables críticas de red están definidas"
+      ansible.builtin.assert:
+        that:
+          - wan_interface is defined and wan_interface | length > 0
+          - lan_interface is defined and lan_interface | length > 0
+          - lan_ip        is defined and lan_ip        | length > 0
+          - lan_prefix    is defined
+          - lan_network   is defined and lan_network   | length > 0
+          - nat_out_interface    is defined and nat_out_interface    | length > 0
+          - nat_inside_interface is defined and nat_inside_interface | length > 0
+        fail_msg: >
+          ERROR CRÍTICO: Una o más variables de red obligatorias no están definidas.
+          Revisa host_vars/rlimengano.yml y roles/rlimengano_nat_gateway/defaults/main.yml.
+          Variables requeridas: wan_interface, lan_interface, lan_ip, lan_prefix,
+          lan_network, nat_out_interface, nat_inside_interface
+        success_msg: "OK: Todas las variables críticas de red están definidas."
+      tags: always
+
+    # -------------------------------------------------------------------------
+    # PRE-2: Mostrar información del sistema (con filtros default para seguridad)
+    # Usando ansible_facts['key'] (formato moderno, evita deprecation warnings)
+    # -------------------------------------------------------------------------
     - name: "PRE | Mostrar información del sistema detectado"
       ansible.builtin.debug:
         msg:
@@ -37,40 +67,47 @@
           - "  RLIMENGANO :: Inicio de configuración"
           - "============================================================"
           - "  Host     : {{ inventory_hostname }}"
-          - "  OS       : {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "  Kernel   : {{ ansible_kernel }}"
-          - "  Fecha    : {{ ansible_date_time.iso8601 }}"
-          - "  WAN (ens34): {{ wan_interface }} - modo {{ wan_mode }}"
-          - "  LAN (ens35): {{ lan_interface }} - IP {{ lan_ip }}/{{ lan_prefix }}"
-          - "  NAT      : {{ 'HABILITADO' if nat_enabled else 'DESHABILITADO' }}"
-          - "  DHCP ISP2: {{ 'HABILITADO' if enable_dhcp_isp2 else 'DESHABILITADO' }}"
+          - "  OS       : {{ ansible_facts['distribution'] | default('N/A') }} {{ ansible_facts['distribution_version'] | default('') }}"
+          - "  Kernel   : {{ ansible_facts['kernel'] | default('N/A') }}"
+          - "  Fecha    : {{ ansible_facts['date_time']['iso8601'] | default('N/A') }}"
+          - "  WAN      : {{ wan_interface | default('ens34') }} - modo {{ wan_mode | default('dhcp') }}"
+          - "  LAN      : {{ lan_interface | default('ens35') }} - IP {{ lan_ip | default('10.250.20.1') }}/{{ lan_prefix | default(24) }}"
+          - "  NAT      : {{ 'HABILITADO' if nat_enabled | default(true) else 'DESHABILITADO' }}"
+          - "  DHCP ISP2: {{ 'HABILITADO' if enable_dhcp_isp2 | default(false) else 'DESHABILITADO' }}"
           - "============================================================"
       tags: always
 
-    - name: "PRE | Verificar que la interfaz WAN (ens34) existe"
+    # -------------------------------------------------------------------------
+    # PRE-3: Verificar que las interfaces físicas existen en el sistema
+    # -------------------------------------------------------------------------
+    - name: "PRE | Verificar que la interfaz WAN ({{ wan_interface }}) existe"
       ansible.builtin.assert:
         that:
-          - wan_interface in ansible_interfaces
+          - wan_interface in ansible_facts['interfaces']
         fail_msg: >
           ERROR CRÍTICO: La interfaz {{ wan_interface }} no existe en este sistema.
-          Interfaces disponibles: {{ ansible_interfaces | join(', ') }}
+          Interfaces disponibles: {{ ansible_facts['interfaces'] | join(', ') }}
           ABORTANDO para no perder conectividad.
         success_msg: "OK: Interfaz WAN {{ wan_interface }} detectada correctamente."
       tags: always
 
-    - name: "PRE | Verificar que la interfaz LAN (ens35) existe"
+    - name: "PRE | Verificar que la interfaz LAN ({{ lan_interface }}) existe"
       ansible.builtin.assert:
         that:
-          - lan_interface in ansible_interfaces
+          - lan_interface in ansible_facts['interfaces']
         fail_msg: >
-          ERROR: La interfaz {{ lan_interface }} no existe.
+          ERROR: La interfaz {{ lan_interface }} no existe en este sistema.
+          Interfaces disponibles: {{ ansible_facts['interfaces'] | join(', ') }}
           Verifique que la tarjeta de red esté conectada a ENG-VM NETWORK en ESXi.
         success_msg: "OK: Interfaz LAN {{ lan_interface }} detectada correctamente."
       tags: always
 
+    # -------------------------------------------------------------------------
+    # PRE-4: Crear directorios de backups y logs
+    # -------------------------------------------------------------------------
     - name: "PRE | Crear directorio de backups"
       ansible.builtin.file:
-        path: "{{ backup_dir }}"
+        path: "{{ backup_dir | default('/root/backups/rlimengano') }}"
         state: directory
         owner: root
         group: root
@@ -79,7 +116,7 @@
 
     - name: "PRE | Crear directorio de logs"
       ansible.builtin.file:
-        path: "/root/backups/rlimengano/logs"
+        path: "{{ backup_dir | default('/root/backups/rlimengano') }}/logs"
         state: directory
         owner: root
         group: root
@@ -112,7 +149,7 @@
     # -------------------------------------------------------------------------
     # Resumen final de configuración aplicada
     # -------------------------------------------------------------------------
-    - name: "POST | Recopilar datos actuales del sistema"
+    - name: "POST | Recopilar estado actual del sistema"
       ansible.builtin.shell: |
         echo "=== HOSTNAME ==="
         hostname
