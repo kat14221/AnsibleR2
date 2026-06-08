@@ -1,0 +1,80 @@
+---
+# =============================================================================
+# ROLE: linux_common - defaults/main.yml
+# =============================================================================
+# Valores por defecto del rol linux_common.
+# Estas variables se aplican si NO están definidas en group_vars/all.yml
+# o en host_vars/. Sirven de fallback de seguridad.
+#
+# PRIORIDAD Ansible (de menor a mayor):
+#   defaults/main.yml < group_vars/all.yml < host_vars/ < extra-vars CLI
+#
+# Por eso estos valores son siempre sobreescritos por group_vars/all.yml
+# cuando el inventario carga correctamente. Si group_vars no carga (por
+# ejemplo en --syntax-check sin inventario), estos defaults evitan el error
+# "variable is undefined".
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# Zona horaria del sistema
+# Valor real: group_vars/all.yml → timezone: "America/Lima"
+# -----------------------------------------------------------------------
+timezone: "America/Lima"
+
+# -----------------------------------------------------------------------
+# Hostname por defecto del dispositivo
+# Valor real: host_vars/rlimengano.yml → rlimengano_hostname: "RLIMENGANO"
+# -----------------------------------------------------------------------
+rlimengano_hostname: "RLIMENGANO"
+
+# -----------------------------------------------------------------------
+# Paquetes base a instalar en todos los hosts Linux
+# -----------------------------------------------------------------------
+base_packages:
+  - git
+  - curl
+  - wget
+  - python3
+  - python3-pip
+  - nftables
+  - iproute2
+  - iputils-ping
+  - net-tools
+  - traceroute
+  - dnsutils
+  - htop
+  - tcpdump
+  - lsof
+  - vim
+  - less
+  - rsync
+  - ca-certificates
+  - gnupg
+  - lsb-release
+
+# -----------------------------------------------------------------------
+# NTP habilitado
+# -----------------------------------------------------------------------
+ntp_enabled: true
+
+# -----------------------------------------------------------------------
+# NTP servers (fallback si group_vars/all.yml no carga)
+# Valor real: group_vars/all.yml → ntp_servers: [...]
+# -----------------------------------------------------------------------
+ntp_servers:
+  - "216.239.35.0"
+  - "216.239.35.4"
+
+# -----------------------------------------------------------------------
+# DNS globales (fallback)
+# Valor real: group_vars/all.yml → dns_servers: [...]
+# -----------------------------------------------------------------------
+dns_servers:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+# -----------------------------------------------------------------------
+# Directorio base de backups (fallback)
+# Valor real: group_vars/all.yml → backup_base_dir: "/root/backups"
+# -----------------------------------------------------------------------
+backup_base_dir: "/root/backups"

@@ -3,22 +3,46 @@
 # ROLE: linux_common - tasks/main.yml
 # =============================================================================
 # Tareas comunes para cualquier VM Linux del proyecto.
-# Configura: hostname, zona horaria, paquetes base, actualizaciones.
+# Configura: hostname, zona horaria, paquetes base, nftables.
+#
+# Todas las variables usan filtros default() como segunda línea de defensa,
+# aunque el valor canónico siempre proviene de:
+#   - group_vars/all.yml     (timezone, ntp_servers, dns_servers, etc.)
+#   - host_vars/rlimengano.yml (rlimengano_hostname, etc.)
+#   - roles/linux_common/defaults/main.yml (fallback de seguridad)
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# BLOQUE 0: Diagnóstico previo — mostrar variables cargadas
+# Evita errores silenciosos por variables no definidas.
+# -----------------------------------------------------------------------------
+- name: "COMMON | Mostrar zona horaria seleccionada"
+  ansible.builtin.debug:
+    msg: "Zona horaria a configurar: {{ timezone | default('America/Lima') }}"
+  tags:
+    - timezone
+    - common
+
+- name: "COMMON | Mostrar hostname seleccionado"
+  ansible.builtin.debug:
+    msg: "Hostname a configurar: {{ rlimengano_hostname | default('RLIMENGANO') }}"
+  tags:
+    - hostname
+    - common
 
 # -----------------------------------------------------------------------------
 # BLOQUE 1: Configuración del Hostname
 # -----------------------------------------------------------------------------
 - name: "COMMON | Configurar hostname del sistema"
   ansible.builtin.hostname:
-    name: "{{ rlimengano_hostname }}"
+    name: "{{ rlimengano_hostname | default('RLIMENGANO') }}"
     use: systemd
   notify: "restart systemd-hostnamed"
   tags: hostname
 
 - name: "COMMON | Configurar /etc/hostname"
   ansible.builtin.copy:
-    content: "{{ rlimengano_hostname }}\n"
+    content: "{{ rlimengano_hostname | default('RLIMENGANO') }}\n"
     dest: /etc/hostname
     owner: root
     group: root
@@ -29,7 +53,7 @@
   ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1'
-    line: "127.0.1.1\t{{ rlimengano_hostname }}"
+    line: "127.0.1.1\t{{ rlimengano_hostname | default('RLIMENGANO') }}"
     state: present
     backup: true
   tags: hostname
@@ -50,8 +74,10 @@
 # -----------------------------------------------------------------------------
 - name: "COMMON | Configurar zona horaria"
   community.general.timezone:
-    name: "{{ timezone }}"
-  tags: timezone
+    name: "{{ timezone | default('America/Lima') }}"
+  tags:
+    - timezone
+    - common
 
 # -----------------------------------------------------------------------------
 # BLOQUE 3: Instalación de paquetes base
@@ -64,28 +90,11 @@
 
 - name: "COMMON | Instalar paquetes esenciales"
   ansible.builtin.apt:
-    name:
-      # Herramientas de red
-      - iproute2
-      - iputils-ping
-      - curl
-      - wget
-      - net-tools
-      - traceroute
-      - dnsutils
-      # Seguridad y firewall
-      - nftables
-      # Monitoreo y diagnóstico
-      - htop
-      - tcpdump
-      - lsof
-      # Utilidades de sistema
-      - vim
-      - less
-      - rsync
-      - ca-certificates
-      - gnupg
-      - lsb-release
+    name: "{{ base_packages | default([\
+      'iproute2', 'iputils-ping', 'curl', 'wget', 'net-tools',\
+      'traceroute', 'dnsutils', 'nftables', 'htop', 'tcpdump',\
+      'lsof', 'vim', 'less', 'rsync', 'ca-certificates', 'gnupg', 'lsb-release'\
+      ]) }}"
     state: present
   tags: packages
 
