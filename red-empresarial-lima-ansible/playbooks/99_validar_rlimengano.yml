@@ -8,6 +8,10 @@
 # Ejecutar con:
 #   ansible-playbook -i inventories/local/hosts.yml \
 #     playbooks/99_validar_rlimengano.yml --ask-become-pass
+#
+# Por tag específico:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rlimengano.yml --tags "dhcp" --ask-become-pass
 # =============================================================================
 
 - name: "RLIMENGANO :: Validaciones completas post-configuración"
@@ -15,11 +19,25 @@
   gather_facts: true
   become: true
 
+  # vars_files carga host_vars explícitamente para que las variables de red
+  # estén disponibles incluso cuando el playbook se ejecuta de forma aislada.
+  vars_files:
+    - "../host_vars/rlimengano.yml"
+
   vars:
-    # Colores ANSI para salida más legible
-    ok_prefix: "[OK]"
+    ok_prefix:   "[OK]"
     fail_prefix: "[FALLO]"
     warn_prefix: "[AVISO]"
+    # Defaults de seguridad por si host_vars no cargara alguna variable
+    _wan: "{{ wan_interface | default('ens34') }}"
+    _lan: "{{ lan_interface | default('ens35') }}"
+    _lan_ip: "{{ lan_ip | default('10.250.20.1') }}"
+    _lan_prefix: "{{ lan_prefix | default(24) }}"
+    _lan_net: "{{ lan_network | default('10.250.20.0/24') }}"
+    _dhcp_enabled: "{{ enable_dhcp_isp2 | default(false) | bool }}"
+    _dhcp_start: "{{ dhcp_range_start | default('10.250.20.100') }}"
+    _dhcp_end: "{{ dhcp_range_end | default('10.250.20.200') }}"
+    _dhcp_gw: "{{ dhcp_gateway | default('10.250.20.1') }}"
 
   tasks:
     # =========================================================================
@@ -47,7 +65,7 @@
     # BLOQUE 2: Interfaces de Red
     # =========================================================================
     - name: "VAL-02 | Obtener estado de interfaces"
-      ansible.builtin.shell: ip -br addr show
+      ansible.builtin.command: ip -br addr show
       register: ifaces_estado
       changed_when: false
       tags: interfaces
@@ -57,42 +75,45 @@
         msg: "{{ ifaces_estado.stdout_lines }}"
       tags: interfaces
 
-    - name: "VAL-02 | Verificar que ens35 tiene IP 10.250.20.1/24"
-      ansible.builtin.shell: >
-        ip addr show {{ lan_interface }} | grep -c '10\.250\.20\.1/24'
+    - name: "VAL-02 | Verificar que {{ _lan }} tiene {{ _lan_ip }}/{{ _lan_prefix }}"
+      ansible.builtin.command:
+        cmd: "ip -4 -o addr show dev {{ _lan }} scope global"
       register: ens35_ip_check
       changed_when: false
       failed_when: false
       tags: interfaces
 
-    - name: "VAL-02 | Resultado: IP de ens35"
+    - name: "VAL-02 | Resultado: IP de {{ _lan }}"
       ansible.builtin.assert:
         that:
-          - ens35_ip_check.stdout | int >= 1
+          - ens35_ip_check.stdout | length > 0
+          - ens35_ip_check.stdout is search(_lan_ip)
         fail_msg: >
-          {{ fail_prefix }} ens35 NO tiene 10.250.20.1/24.
+          {{ fail_prefix }} {{ _lan }} NO tiene {{ _lan_ip }}/{{ _lan_prefix }}.
           Salida: {{ ens35_ip_check.stdout }}
         success_msg: >
-          {{ ok_prefix }} ens35 tiene correctamente 10.250.20.1/24
+          {{ ok_prefix }} {{ _lan }} tiene correctamente {{ _lan_ip }}/{{ _lan_prefix }}
       tags: interfaces
 
-    - name: "VAL-02 | Verificar que ens34 tiene IP (DHCP activo)"
-      ansible.builtin.shell: >
-        ip addr show {{ wan_interface }} | grep -c 'inet '
+    - name: "VAL-02 | Verificar que {{ _wan }} tiene IP (DHCP activo)"
+      ansible.builtin.command:
+        cmd: "ip -4 -o addr show dev {{ _wan }} scope global"
       register: ens34_ip_check
       changed_when: false
       failed_when: false
       tags: interfaces
 
-    - name: "VAL-02 | Resultado: IP de ens34 (DHCP)"
+    - name: "VAL-02 | Resultado: IP de {{ _wan }} (DHCP)"
       ansible.builtin.assert:
         that:
-          - ens34_ip_check.stdout | int >= 1
+          - ens34_ip_check.rc == 0
+          - ens34_ip_check.stdout | length > 0
         fail_msg: >
-          {{ fail_prefix }} ens34 NO tiene IP asignada por DHCP.
+          {{ fail_prefix }} {{ _wan }} NO tiene IP asignada por DHCP.
           Verificar conectividad con VM Network en ESXi.
         success_msg: >
-          {{ ok_prefix }} ens34 tiene IP asignada (DHCP activo).
+          {{ ok_prefix }} {{ _wan }} tiene IP asignada (DHCP activo):
+          {{ ens34_ip_check.stdout | regex_replace('\s+', ' ') }}
       tags: interfaces
 
     # =========================================================================
@@ -110,8 +131,7 @@
       tags: routing
 
     - name: "VAL-03 | Verificar que existe ruta por defecto"
-      ansible.builtin.shell: >
-        ip route show default | grep -c 'default'
+      ansible.builtin.shell: ip route show default | grep -c 'default'
       register: default_route_check
       changed_when: false
       failed_when: false
@@ -123,47 +143,45 @@
           - default_route_check.stdout | int >= 1
         fail_msg: >
           {{ fail_prefix }} No existe ruta por defecto.
-          Verificar que ens34 obtiene DHCP con gateway.
+          Verificar que {{ _wan }} obtiene DHCP con gateway.
         success_msg: >
-          {{ ok_prefix }} Existe ruta por defecto (gateway desde ens34).
+          {{ ok_prefix }} Existe ruta por defecto (gateway desde {{ _wan }}).
       tags: routing
 
-    - name: "VAL-03 | Verificar que la ruta por defecto sale por ens34"
-      ansible.builtin.shell: >
-        ip route show default | grep -c '{{ wan_interface }}'
+    - name: "VAL-03 | Verificar que la ruta por defecto sale por {{ _wan }}"
+      ansible.builtin.shell: ip route show default | grep -c '{{ _wan }}'
       register: default_via_wan
       changed_when: false
       failed_when: false
       tags: routing
 
-    - name: "VAL-03 | Resultado: Ruta por defecto via ens34"
+    - name: "VAL-03 | Resultado: Ruta por defecto via {{ _wan }}"
       ansible.builtin.assert:
         that:
           - default_via_wan.stdout | int >= 1
         fail_msg: >
-          {{ fail_prefix }} La ruta por defecto NO sale por {{ wan_interface }}.
+          {{ fail_prefix }} La ruta por defecto NO sale por {{ _wan }}.
           Revisar netplan y configuración DHCP.
         success_msg: >
-          {{ ok_prefix }} Ruta por defecto correctamente via {{ wan_interface }}.
+          {{ ok_prefix }} Ruta por defecto correctamente via {{ _wan }}.
       tags: routing
 
-    - name: "VAL-03 | Verificar que ens35 NO tiene gateway por defecto"
-      ansible.builtin.shell: >
-        ip route show default | grep -c '{{ lan_interface }}'
+    - name: "VAL-03 | Verificar que {{ _lan }} NO tiene gateway por defecto"
+      ansible.builtin.shell: ip route show default | grep -c '{{ _lan }}'
       register: no_default_via_lan
       changed_when: false
       failed_when: false
       tags: routing
 
-    - name: "VAL-03 | Resultado: ens35 sin gateway por defecto"
+    - name: "VAL-03 | Resultado: {{ _lan }} sin gateway por defecto"
       ansible.builtin.assert:
         that:
           - no_default_via_lan.stdout | int == 0
         fail_msg: >
-          {{ fail_prefix }} ens35 tiene una ruta por defecto asignada.
+          {{ fail_prefix }} {{ _lan }} tiene una ruta por defecto asignada.
           Esto causará problemas de routing. Debe ser 0.
         success_msg: >
-          {{ ok_prefix }} ens35 NO tiene gateway por defecto (correcto).
+          {{ ok_prefix }} {{ _lan }} NO tiene gateway por defecto (correcto).
       tags: routing
 
     # =========================================================================
@@ -221,8 +239,7 @@
       tags: nftables
 
     - name: "VAL-05 | Verificar que existe regla NAT masquerade"
-      ansible.builtin.shell: >
-        nft list ruleset | grep -c 'masquerade'
+      ansible.builtin.shell: nft list ruleset | grep -c 'masquerade'
       register: nat_masquerade_check
       changed_when: false
       failed_when: false
@@ -255,7 +272,7 @@
           - ping_google_dns.rc == 0
         fail_msg: >
           {{ fail_prefix }} Sin conectividad a 8.8.8.8.
-          Verificar: ens34 DHCP, gateway por defecto, conectividad ESXi.
+          Verificar: {{ _wan }} DHCP, gateway por defecto, conectividad ESXi.
           Salida: {{ ping_google_dns.stdout }}
         success_msg: >
           {{ ok_prefix }} Conectividad a 8.8.8.8 OK desde RLIMENGANO.
@@ -291,7 +308,7 @@
       tags: conectividad
 
     # =========================================================================
-    # BLOQUE 7: Resumen Final
+    # BLOQUE 7: Resumen del sistema NAT
     # =========================================================================
     - name: "VAL-07 | Resumen completo del sistema"
       ansible.builtin.shell: |
@@ -325,11 +342,170 @@
         msg: "{{ resumen_final.stdout_lines }}"
       tags: resumen
 
-    - name: "VAL-07 | Mensaje final de validación"
+    # =========================================================================
+    # BLOQUE 8: Validaciones DHCP (solo si enable_dhcp_isp2 = true)
+    # =========================================================================
+    - name: "VAL-08 | INFO: Estado de DHCP configurado"
+      ansible.builtin.debug:
+        msg: >
+          DHCP en {{ _lan }}: {{ 'HABILITADO — ejecutando validaciones' if _dhcp_enabled
+          else 'DESHABILITADO — omitiendo validaciones DHCP (enable_dhcp_isp2=false)' }}
+      tags:
+        - dhcp
+        - resumen
+
+    - name: "VAL-08 | Verificar que isc-dhcp-server está instalado"
+      ansible.builtin.shell: dpkg -l isc-dhcp-server 2>/dev/null | grep -c '^ii'
+      register: dhcp_pkg_check
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Resultado: isc-dhcp-server instalado"
+      ansible.builtin.assert:
+        that:
+          - dhcp_pkg_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} isc-dhcp-server NO está instalado.
+          Ejecutar: ansible-playbook ... --tags dhcp
+        success_msg: >
+          {{ ok_prefix }} isc-dhcp-server está instalado.
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Verificar que isc-dhcp-server está activo"
+      ansible.builtin.command: systemctl is-active isc-dhcp-server
+      register: dhcp_svc_check
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Resultado: Servicio isc-dhcp-server"
+      ansible.builtin.assert:
+        that:
+          - dhcp_svc_check.stdout == "active"
+        fail_msg: >
+          {{ fail_prefix }} isc-dhcp-server NO está activo.
+          Estado: {{ dhcp_svc_check.stdout }}
+          Ejecutar: systemctl start isc-dhcp-server
+        success_msg: >
+          {{ ok_prefix }} isc-dhcp-server activo y corriendo.
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Verificar que isc-dhcp-server escucha en {{ _lan }}"
+      ansible.builtin.shell: grep -c 'INTERFACESv4="{{ _lan }}"' /etc/default/isc-dhcp-server
+      register: dhcp_iface_check
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Resultado: Interfaz DHCP"
+      ansible.builtin.assert:
+        that:
+          - dhcp_iface_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} /etc/default/isc-dhcp-server NO tiene INTERFACESv4="{{ _lan }}".
+          Contenido actual: {{ dhcp_iface_check.stdout }}
+        success_msg: >
+          {{ ok_prefix }} DHCP escuchando correctamente en {{ _lan }}.
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Verificar subred en dhcpd.conf"
+      ansible.builtin.shell: grep -c 'subnet 10\.250\.20\.0 netmask 255\.255\.255\.0' /etc/dhcp/dhcpd.conf
+      register: dhcp_subnet_check
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Resultado: Subred en dhcpd.conf"
+      ansible.builtin.assert:
+        that:
+          - dhcp_subnet_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} dhcpd.conf NO tiene la subred 10.250.20.0/24.
+        success_msg: >
+          {{ ok_prefix }} dhcpd.conf tiene la subred 10.250.20.0 255.255.255.0.
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Verificar rango DHCP en dhcpd.conf"
+      ansible.builtin.shell: grep -c 'range {{ _dhcp_start }} {{ _dhcp_end }}' /etc/dhcp/dhcpd.conf
+      register: dhcp_range_check
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Resultado: Rango DHCP"
+      ansible.builtin.assert:
+        that:
+          - dhcp_range_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} dhcpd.conf NO tiene el rango {{ _dhcp_start }} - {{ _dhcp_end }}.
+        success_msg: >
+          {{ ok_prefix }} Rango DHCP correcto: {{ _dhcp_start }} - {{ _dhcp_end }}.
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Verificar option routers en dhcpd.conf"
+      ansible.builtin.shell: grep -c 'option routers {{ _dhcp_gw }}' /etc/dhcp/dhcpd.conf
+      register: dhcp_router_check
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Resultado: Gateway DHCP"
+      ansible.builtin.assert:
+        that:
+          - dhcp_router_check.stdout | int >= 1
+        fail_msg: >
+          {{ fail_prefix }} dhcpd.conf NO tiene 'option routers {{ _dhcp_gw }}'.
+        success_msg: >
+          {{ ok_prefix }} Gateway DHCP correcto: option routers {{ _dhcp_gw }}.
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Mostrar leases DHCP activos"
+      ansible.builtin.shell: |
+        if [ -f /var/lib/dhcp/dhcpd.leases ]; then
+          echo "=== Leases activos ==="
+          grep -E '(lease|binding state active|hardware ethernet|fixed-address)' \
+            /var/lib/dhcp/dhcpd.leases | head -40 || echo "Sin leases activos aún"
+        else
+          echo "Archivo dhcpd.leases no encontrado (sin leases entregados todavía)"
+        fi
+      register: dhcp_leases
+      changed_when: false
+      failed_when: false
+      when: _dhcp_enabled
+      tags: dhcp
+
+    - name: "VAL-08 | Mostrar leases"
+      ansible.builtin.debug:
+        msg: "{{ dhcp_leases.stdout_lines }}"
+      when: _dhcp_enabled
+      tags: dhcp
+
+    # =========================================================================
+    # BLOQUE 9: Mensaje final
+    # =========================================================================
+    - name: "VAL-09 | Mensaje final de validación"
       ansible.builtin.debug:
         msg:
           - "============================================================"
           - "  VALIDACIÓN COMPLETADA :: RLIMENGANO"
+          - "============================================================"
+          - "  WAN ({{ _wan }})  : DHCP desde VM Network"
+          - "  LAN ({{ _lan }})  : {{ _lan_ip }}/{{ _lan_prefix }} (ENG-VM NETWORK)"
+          - "  NAT            : masquerade activo via {{ _wan }}"
+          - "  DHCP ISP2      : {{ 'HABILITADO (' + _dhcp_start + '-' + _dhcp_end + ')' if _dhcp_enabled else 'DESHABILITADO' }}"
           - "============================================================"
           - "  Consulta docs/validaciones_rlimengano.md para pruebas"
           - "  manuales desde RLIM1 y RLIM2."

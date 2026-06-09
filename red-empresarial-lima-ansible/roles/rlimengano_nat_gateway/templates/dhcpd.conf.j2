@@ -2,25 +2,30 @@
    TEMPLATE: dhcpd.conf.j2
    Genera la configuración del servidor DHCP isc-dhcp-server.
    Solo se usa si enable_dhcp_isp2 = true.
-   
+
    Archivo de destino: /etc/dhcp/dhcpd.conf
-   
-   RANGO: {{ dhcp_range_start }} - {{ dhcp_range_end }}
+
+   RANGO  : {{ dhcp_range_start }} - {{ dhcp_range_end }}
    GATEWAY: {{ dhcp_gateway }} (= IP de ens35)
-   DNS: {{ dhcp_dns | join(', ') }}
-   
+   DNS    : {{ dhcp_dns | join(', ') }}
+
    NOTA: Las IPs 10.250.20.11 (RLIM1) y 10.250.20.12 (RLIM2)
    están fuera del rango DHCP (que empieza en .100) para no conflictuar.
+
+   NOTA técnica: No se usan filtros ipaddr() para evitar dependencia de
+   python3-netaddr. Los valores de red se toman directamente de las variables.
    ============================================================================= #}
 # ===========================================================================
 # DHCPD.CONF - Servidor DHCP para ENG-VM NETWORK (ens35)
 # ===========================================================================
-# Generado automáticamente por Ansible
-# Host     : {{ rlimengano_hostname }}
-# Red LAN  : {{ lan_network }}
-# Escucha  : {{ lan_interface }}
+# Generado automáticamente por Ansible — NO EDITAR MANUALMENTE
+# Host     : {{ rlimengano_hostname | default('RLIMENGANO') }}
+# Red LAN  : {{ lan_network | default('10.250.20.0/24') }}
+# Escucha  : {{ lan_interface | default('ens35') }}
+# Gateway  : {{ dhcp_gateway | default('10.250.20.1') }}
+# Rango    : {{ dhcp_range_start | default('10.250.20.100') }} - {{ dhcp_range_end | default('10.250.20.200') }}
+# DNS      : {{ dhcp_dns | default(['8.8.8.8', '1.1.1.1']) | join(', ') }}
 # Fecha    : {{ ansible_facts['date_time']['iso8601'] }}
-# NO EDITAR MANUALMENTE - Será sobreescrito por Ansible
 # ===========================================================================
 
 # Configuración global del servidor DHCP
@@ -29,47 +34,54 @@ max-lease-time 86400;         # 24 horas máximo
 authoritative;                # Este servidor es autoritativo para la subred
 log-facility local7;
 
-# DNS: Los clientes usarán DNS de Google y Cloudflare
-option domain-name-servers {{ dhcp_dns | join(', ') }};
+# DNS global: Los clientes usarán DNS de Google y Cloudflare
+option domain-name-servers {{ dhcp_dns | default(['8.8.8.8', '1.1.1.1']) | join(', ') }};
 
 # ===========================================================================
-# SUBRED: {{ lan_network }}
-# Gateway: {{ dhcp_gateway }} (ens35 de RLIMENGANO)
+# SUBRED: 10.250.20.0/24
+# Gateway : {{ dhcp_gateway | default('10.250.20.1') }} (ens35 de RLIMENGANO)
+# Broadcast: 10.250.20.255
 # ===========================================================================
-subnet {{ lan_network | ipaddr('network') }} netmask {{ lan_network | ipaddr('netmask') }} {
-    # Rango de IPs disponibles para asignación dinámica
-    # NOTA: Las IPs .11 (RLIM1) y .12 (RLIM2) son estáticas y están FUERA de este rango.
-    range {{ dhcp_range_start }} {{ dhcp_range_end }};
+subnet 10.250.20.0 netmask 255.255.255.0 {
+
+    # Rango de IPs disponibles para asignación dinámica.
+    # IPs reservadas fuera del rango:
+    #   10.250.20.1   = RLIMENGANO (gateway)
+    #   10.250.20.11  = RLIM1-PRINCIPAL WAN2 (estática)
+    #   10.250.20.12  = RLIM2-SECUNDARIO WAN2 (estática)
+    range {{ dhcp_range_start | default('10.250.20.100') }} {{ dhcp_range_end | default('10.250.20.200') }};
 
     # Gateway por defecto = ens35 de RLIMENGANO
-    option routers {{ dhcp_gateway }};
+    option routers {{ dhcp_gateway | default('10.250.20.1') }};
 
     # DNS externos
-    option domain-name-servers {{ dhcp_dns | join(', ') }};
+    option domain-name-servers {{ dhcp_dns | default(['8.8.8.8', '1.1.1.1']) | join(', ') }};
+
+    # Broadcast de la subred
+    option broadcast-address 10.250.20.255;
+
+    # Nombre del dominio (para resolución de nombres internos)
+    option domain-name "lab.local";
 
     # Duración del lease
     default-lease-time 43200;
     max-lease-time 86400;
-
-    # Nombre del dominio (opcional, para búsqueda de nombres)
-    option domain-name "lab.local";
 }
 
 # ===========================================================================
-# HOSTS FIJOS (reservas estáticas por MAC)
-# Estas reservas son OPCIONALES y sirven para documentación.
+# HOSTS FIJOS (reservas estáticas por MAC) — COMENTADAS
 # RLIM1 y RLIM2 configuran sus IPs de forma estática, no por DHCP.
 # Si en el futuro se desea hacer reservas por MAC, descomentar y ajustar:
 # ===========================================================================
 #
 # host RLIM1-PRINCIPAL {
 #     hardware ethernet <MAC-de-ens-WAN2-RLIM1>;
-#     fixed-address {{ rlim1_wan2_ip }};
-#     option routers {{ dhcp_gateway }};
+#     fixed-address {{ rlim1_wan2_ip | default('10.250.20.11') }};
+#     option routers {{ dhcp_gateway | default('10.250.20.1') }};
 # }
 #
 # host RLIM2-SECUNDARIO {
 #     hardware ethernet <MAC-de-ens-WAN2-RLIM2>;
-#     fixed-address {{ rlim2_wan2_ip }};
-#     option routers {{ dhcp_gateway }};
+#     fixed-address {{ rlim2_wan2_ip | default('10.250.20.12') }};
+#     option routers {{ dhcp_gateway | default('10.250.20.1') }};
 # }

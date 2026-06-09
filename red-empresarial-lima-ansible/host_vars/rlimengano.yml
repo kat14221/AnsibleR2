@@ -52,11 +52,14 @@ nat_out_interface: "ens34"      # Interfaz de salida a Internet
 nat_inside_interface: "ens35"   # Interfaz de la red interna (LAN ISP2)
 
 # -----------------------------------------------------------------------
-# DHCP Opcional en ens35 (ENG-VM NETWORK)
-# Por defecto: DESHABILITADO (RLIM1 y RLIM2 usan IPs estáticas)
-# Cambiar a true si se necesitan IPs dinámicas adicionales.
+# DHCP en ens35 (ENG-VM NETWORK)
+# HABILITADO: los clientes de ENG-VM NETWORK reciben IP automáticamente.
+# Pool: 10.250.20.100 - 10.250.20.200 (IPs bajas reservadas para infra)
+#   10.250.20.1   = RLIMENGANO (gateway)
+#   10.250.20.11  = RLIM1-PRINCIPAL WAN2 (estática)
+#   10.250.20.12  = RLIM2-SECUNDARIO WAN2 (estática)
 # -----------------------------------------------------------------------
-enable_dhcp_isp2: false
+enable_dhcp_isp2: true
 
 dhcp_range_start: "10.250.20.100"
 dhcp_range_end: "10.250.20.200"
