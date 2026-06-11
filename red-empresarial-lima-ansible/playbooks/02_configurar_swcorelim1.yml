@@ -1,0 +1,226 @@
+---
+# =============================================================================
+# PLAYBOOK: 02_configurar_swcorelim1.yml
+# =============================================================================
+# Propósito: Configuración completa y segura de SWCORELIM1 como switch Core
+#            principal de la sede Lima (proyecto JHALEX).
+#
+# Ejecutar desde SWCORELIM1 (local) o desde controller externo con SSH:
+#
+#   [Local — ejecutar en SWCORELIM1 directamente]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim1.yml --ask-become-pass
+#
+#   [Dry-run — sin cambios]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim1.yml --check --diff --ask-become-pass
+#
+#   [Solo Netplan]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim1.yml --tags netplan --ask-become-pass
+#
+#   [Solo OVS]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim1.yml --tags ovs --ask-become-pass
+#
+# Requiere: ansible-galaxy collection install -r requirements.yml
+#
+# Tags disponibles:
+#   always              — siempre se ejecuta (validaciones, diagnóstico)
+#   validate_interfaces — verificación de ens34..ens41
+#   hostname            — configurar hostname
+#   timezone            — zona horaria
+#   packages            — instalar paquetes
+#   services            — habilitar servicios
+#   netplan             — configurar Netplan + aplicar + validar conectividad
+#   ovs                 — desplegar script y servicio OVS
+# =============================================================================
+
+- name: "SWCORELIM1 :: Configuración Core Switch Principal — Sede Lima (JHALEX)"
+  hosts: swcorelim1
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    # -------------------------------------------------------------------------
+    # PRE-0: Verificar que el host es exactamente SWCORELIM1
+    # -------------------------------------------------------------------------
+    - name: "PRE | Verificar que el host de destino es swcorelim1"
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == "swcorelim1"
+        fail_msg: >
+          ERROR: Este playbook solo debe ejecutarse en swcorelim1.
+          Host actual: {{ inventory_hostname }}.
+          Abortar para evitar configurar el dispositivo equivocado.
+        success_msg: "OK: Ejecutando en el host correcto: {{ inventory_hostname }}"
+      tags: always
+
+    # -------------------------------------------------------------------------
+    # PRE-1: Validar variables críticas de red
+    # -------------------------------------------------------------------------
+    - name: "PRE | Validar variables críticas de red"
+      ansible.builtin.assert:
+        that:
+          - swcorelim1_hostname is defined and swcorelim1_hostname | length > 0
+          - ens34_ip            is defined and ens34_ip            | length > 0
+          - ens34_cidr          is defined and ens34_cidr          | length > 0
+          - ens34_gateway       is defined and ens34_gateway       | length > 0
+          - ens35_ip            is defined and ens35_ip            | length > 0
+          - ens35_cidr          is defined and ens35_cidr          | length > 0
+          - ovs_bridge_name     is defined and ovs_bridge_name     | length > 0
+          - ovs_script_path     is defined and ovs_script_path     | length > 0
+          - ovs_service_name    is defined and ovs_service_name    | length > 0
+        fail_msg: >
+          ERROR CRÍTICO: Variables de red obligatorias no definidas.
+          Revisa host_vars/swcorelim1.yml.
+          Variables necesarias: swcorelim1_hostname, ens34_ip, ens34_cidr,
+          ens34_gateway, ens35_ip, ens35_cidr, ovs_bridge_name,
+          ovs_script_path, ovs_service_name.
+        success_msg: "OK: Todas las variables críticas están definidas."
+      tags: always
+
+    # -------------------------------------------------------------------------
+    # PRE-2: Mostrar banner de inicio con configuración planeada
+    # -------------------------------------------------------------------------
+    - name: "PRE | Mostrar banner de configuración planeada"
+      ansible.builtin.debug:
+        msg:
+          - "========================================================="
+          - "  SWCORELIM1 :: Configuración Core Switch Lima (JHALEX)"
+          - "========================================================="
+          - "  Hostname      : {{ swcorelim1_hostname }}"
+          - "  OS            : {{ ansible_facts['distribution'] | default('N/A') }} {{ ansible_facts['distribution_version'] | default('') }}"
+          - "  ens34 IP      : {{ ens34_cidr }} — Gateway: {{ ens34_gateway }}"
+          - "  ens35 IP      : {{ ens35_cidr }} — Solo IP, sin gateway"
+          - "  DNS           : {{ dns_servers_local | default(['8.8.8.8','1.1.1.1']) | join(', ') }}"
+          - "  OVS Bridge    : {{ ovs_bridge_name }} (RSTP={{ ovs_rstp_enabled }})"
+          - "  Bond C-C      : {{ bond_core_core_name | default('bond-pcsc1-sc2') }} (ens36+ens37)"
+          - "  Bond C-D1     : {{ bond_core_dist1_name | default('bond-pcsc1-sd1') }} (ens38+ens39)"
+          - "  Bond C-D2     : {{ bond_core_dist2_name | default('bond-pcsc1-sd2') }} (ens40+ens41)"
+          - "  Internal Port : {{ ovs_internal_port_name }} → {{ ovs_internal_port_cidr }}"
+          - "========================================================="
+          - "  PROHIBIDO en esta ejecución:"
+          - "    VLANs, VRRP, OSPF, BGP, LACP, DHCP, ACLs, MLAG"
+          - "========================================================="
+      tags: always
+
+    # -------------------------------------------------------------------------
+    # PRE-3: Crear directorios de backups y logs
+    # -------------------------------------------------------------------------
+    - name: "PRE | Crear directorio de backups de SWCORELIM1"
+      ansible.builtin.file:
+        path: "{{ backup_dir | default('/root/backups/swcorelim1') }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: always
+
+    - name: "PRE | Crear subdirectorio de logs"
+      ansible.builtin.file:
+        path: "{{ backup_dir | default('/root/backups/swcorelim1') }}/logs"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: always
+
+  roles:
+    # -------------------------------------------------------------------------
+    # Rol 1: Configuraciones comunes Linux (hostname, timezone, paquetes base)
+    # -------------------------------------------------------------------------
+    - role: linux_common
+      vars:
+        rlimengano_hostname: "{{ swcorelim1_hostname }}"   # reutilizar el rol común
+      tags:
+        - common
+        - hostname
+        - timezone
+        - packages
+
+    # -------------------------------------------------------------------------
+    # Rol 2: Configuración completa de SWCORELIM1
+    # (paquetes específicos, netplan, OVS, servicios, validaciones)
+    # -------------------------------------------------------------------------
+    - role: swcorelim1
+      tags:
+        - swcorelim1
+        - netplan
+        - ovs
+        - services
+        - packages
+
+  post_tasks:
+    # -------------------------------------------------------------------------
+    # POST: Resumen completo de validaciones finales
+    # -------------------------------------------------------------------------
+    - name: "POST | Recopilar estado final del sistema"
+      ansible.builtin.shell: |
+        echo "=============================="
+        echo "HOSTNAME"
+        echo "=============================="
+        hostname
+        echo ""
+        echo "=============================="
+        echo "INTERFACES (ip -br addr)"
+        echo "=============================="
+        ip -br addr
+        echo ""
+        echo "=============================="
+        echo "RUTAS (ip route)"
+        echo "=============================="
+        ip route show
+        echo ""
+        echo "=============================="
+        echo "SERVICIOS"
+        echo "=============================="
+        systemctl is-active ssh            && echo "ssh: activo"            || echo "ssh: INACTIVO"
+        systemctl is-active openvswitch-switch && echo "ovs: activo"        || echo "ovs: INACTIVO"
+        systemctl is-active lldpd          && echo "lldpd: activo"         || echo "lldpd: INACTIVO"
+        echo ""
+        echo "=============================="
+        echo "OVS SHOW"
+        echo "=============================="
+        ovs-vsctl show 2>/dev/null || echo "OVS no disponible"
+        echo ""
+        echo "=============================="
+        echo "OVS BONDS"
+        echo "=============================="
+        ovs-appctl bond/show 2>/dev/null || echo "Sin bonds activos"
+      register: resumen_final
+      changed_when: false
+      tags: always
+
+    - name: "POST | Mostrar resumen del sistema configurado"
+      ansible.builtin.debug:
+        msg: "{{ resumen_final.stdout_lines }}"
+      tags: always
+
+    - name: "POST | Mensaje de finalización y próximos pasos"
+      ansible.builtin.debug:
+        msg:
+          - "========================================================="
+          - "  SWCORELIM1 :: Configuración completada"
+          - "========================================================="
+          - "  Para validar detalladamente ejecutar:"
+          - "  ansible-playbook -i inventories/local/hosts.yml \\"
+          - "    playbooks/99_validar_swcorelim1.yml --ask-become-pass"
+          - ""
+          - "  PRUEBAS OK (esperadas):"
+          - "    [ ] ens34 → 10.10.254.2/30"
+          - "    [ ] ens35 → 10.10.254.10/30"
+          - "    [ ] Ruta default → 10.10.254.1"
+          - "    [ ] ping 10.10.254.1 (RLIM1)"
+          - "    [ ] Bridge br-core con RSTP"
+          - "    [ ] bond-pcsc1-sc2 (ens36+ens37)"
+          - "    [ ] bond-pcsc1-sd1 (ens38+ens39)"
+          - "    [ ] bond-pcsc1-sd2 (ens40+ens41)"
+          - "    [ ] int-core-test → 10.255.21.1/30"
+          - ""
+          - "  PRUEBAS PENDIENTES (requieren vecinos):"
+          - "    [ ] ping 10.255.21.2 → requiere SWCORELIM2"
+          - "    [ ] bond-pcsc1-sd1 activo → requiere SWDISTLIM1"
+          - "    [ ] bond-pcsc1-sd2 activo → requiere SWDISTLIM2"
+          - "========================================================="
+      tags: always

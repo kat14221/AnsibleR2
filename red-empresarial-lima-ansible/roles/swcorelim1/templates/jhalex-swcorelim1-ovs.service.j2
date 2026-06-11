@@ -1,0 +1,15 @@
+[Unit]
+Description=JHALEX SWCORELIM1 — Open vSwitch idempotent configuration
+Documentation=https://github.com/jhalex/red-empresarial-lima-ansible
+After=network.target openvswitch-switch.service
+Requires=openvswitch-switch.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim1-ovs.sh') }}
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

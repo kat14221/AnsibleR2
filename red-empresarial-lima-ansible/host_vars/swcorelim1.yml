@@ -1,0 +1,168 @@
+# =============================================================================
+# HOST_VARS/SWCORELIM1.YML - Variables Específicas de SWCORELIM1
+# =============================================================================
+# VM función  : Switch Core Principal de la Sede Lima (JHALEX)
+# Plataforma  : VMware ESXi
+# SO          : Ubuntu Server 24.04 LTS
+# Tecnología  : Open vSwitch (balance-slb, RSTP)
+# Rol         : Core L2/L3 local — no enruta dinámicamente todavía
+#
+# PROHIBIDO configurar: VLANs, VRRP, OSPF, BGP, LACP, ACLs, DHCP, MLAG
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------
+# Identidad del dispositivo
+# -----------------------------------------------------------------------
+swcorelim1_hostname: "swcorelim1"
+# Hostname Linux debe ir en minúsculas (restricción de Ubuntu 24.04)
+
+# -----------------------------------------------------------------------
+# Directorio de backups específico de SWCORELIM1
+# -----------------------------------------------------------------------
+backup_dir: "/root/backups/swcorelim1"
+
+# -----------------------------------------------------------------------
+# Archivo Netplan principal del dispositivo
+# El playbook detecta el archivo real, pero este es el nombre canónico.
+# -----------------------------------------------------------------------
+netplan_config_file: "/etc/netplan/99-swcorelim1-netplan.yaml"
+netplan_config_dir:  "/etc/netplan"
+
+# -----------------------------------------------------------------------
+# Interfaces físicas validadas (mapeo ESXi → Linux)
+# NO inventar nombres. Usar EXACTAMENTE estos.
+# -----------------------------------------------------------------------
+# | Interfaz | Port Group ESXi   | Función                           |
+# |----------|-------------------|-----------------------------------|
+# | ens34    | R1-S1             | Enlace L3 → RLIM1-PRINCIPAL       |
+# | ens35    | R2-S1             | Enlace L3 → RLIM2-SECUNDARIO      |
+# | ens36    | PCSC1-SC2(1)      | Miembro 1 bond Core1-Core2        |
+# | ens37    | PCSC1-SC2(2)      | Miembro 2 bond Core1-Core2        |
+# | ens38    | PCSC1-SD1(1)      | Miembro 1 bond Core1-Dist1        |
+# | ens39    | PCSC1-SD1(2)      | Miembro 2 bond Core1-Dist1        |
+# | ens40    | PCSC1-SD2(1)      | Miembro 1 bond Core1-Dist2        |
+# | ens41    | PCSC1-SD2(2)      | Miembro 2 bond Core1-Dist2        |
+
+required_interfaces:
+  - ens34
+  - ens35
+  - ens36
+  - ens37
+  - ens38
+  - ens39
+  - ens40
+  - ens41
+
+# -----------------------------------------------------------------------
+# Enlace L3 hacia RLIM1-PRINCIPAL (ens34)
+# Este es el enlace primario. CONTIENE la ruta default.
+# ADVERTENCIA: NO eliminar ni modificar la ruta default aquí.
+# -----------------------------------------------------------------------
+ens34_ip:      "10.10.254.2"
+ens34_prefix:  30
+ens34_cidr:    "10.10.254.2/30"
+ens34_network: "10.10.254.0/30"
+ens34_gateway: "10.10.254.1"   # IP de RLIM1-PRINCIPAL
+
+# -----------------------------------------------------------------------
+# Enlace L3 hacia RLIM2-SECUNDARIO (ens35)
+# Solo IP directa. SIN gateway default. Solo para pruebas contra RLIM2.
+# -----------------------------------------------------------------------
+ens35_ip:      "10.10.254.10"
+ens35_prefix:  30
+ens35_cidr:    "10.10.254.10/30"
+ens35_network: "10.10.254.8/30"
+# IMPORTANTE: No colocar gateway en ens35.
+
+# -----------------------------------------------------------------------
+# DNS globales
+# -----------------------------------------------------------------------
+dns_servers_local:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+# -----------------------------------------------------------------------
+# Interfaces OVS Bond — Core1-Core2 (SWCORELIM2)
+# -----------------------------------------------------------------------
+bond_core_core_name:     "bond-pcsc1-sc2"
+bond_core_core_members:
+  - ens36
+  - ens37
+bond_core_core_mode:     "balance-slb"
+
+# -----------------------------------------------------------------------
+# Interfaces OVS Bond — Core1-Dist1 (SWDISTLIM1)
+# -----------------------------------------------------------------------
+bond_core_dist1_name:    "bond-pcsc1-sd1"
+bond_core_dist1_members:
+  - ens38
+  - ens39
+bond_core_dist1_mode:    "balance-slb"
+
+# -----------------------------------------------------------------------
+# Interfaces OVS Bond — Core1-Dist2 (SWDISTLIM2)
+# -----------------------------------------------------------------------
+bond_core_dist2_name:    "bond-pcsc1-sd2"
+bond_core_dist2_members:
+  - ens40
+  - ens41
+bond_core_dist2_mode:    "balance-slb"
+
+# -----------------------------------------------------------------------
+# Bridge OVS principal
+# -----------------------------------------------------------------------
+ovs_bridge_name:     "br-core"
+ovs_rstp_enabled:    "true"
+
+# -----------------------------------------------------------------------
+# Interfaz interna OVS de prueba Core-Core
+# Usada para validar el port-channel ens36/ens37 hacia SWCORELIM2.
+# IP local: 10.255.21.1/30
+# IP futura SWCORELIM2: 10.255.21.2/30
+# NO participa en OSPF. NO reemplaza la ruta default.
+# -----------------------------------------------------------------------
+ovs_internal_port_name: "int-core-test"
+ovs_internal_port_ip:   "10.255.21.1"
+ovs_internal_port_prefix: 30
+ovs_internal_port_cidr: "10.255.21.1/30"
+
+# -----------------------------------------------------------------------
+# Script OVS idempotente y servicio systemd
+# -----------------------------------------------------------------------
+ovs_script_path:   "/usr/local/sbin/jhalex-swcorelim1-ovs.sh"
+ovs_service_name:  "jhalex-swcorelim1-ovs"
+ovs_service_path:  "/etc/systemd/system/jhalex-swcorelim1-ovs.service"
+
+# -----------------------------------------------------------------------
+# Paquetes requeridos para SWCORELIM1
+# -----------------------------------------------------------------------
+swcorelim1_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+# -----------------------------------------------------------------------
+# Servicios que deben estar activos
+# -----------------------------------------------------------------------
+swcorelim1_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd
+
+# -----------------------------------------------------------------------
+# Servicios instalados pero NO activados ni configurados todavía
+# -----------------------------------------------------------------------
+# frr, keepalived, nftables → solo instalados, no habilitados ni activos.

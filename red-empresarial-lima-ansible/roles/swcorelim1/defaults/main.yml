@@ -1,0 +1,67 @@
+---
+# =============================================================================
+# ROLE: swcorelim1 — defaults/main.yml
+# =============================================================================
+# Valores por defecto del rol. Sobreescritos por host_vars/swcorelim1.yml.
+# =============================================================================
+
+swcorelim1_hostname: "swcorelim1"
+backup_dir:          "/root/backups/swcorelim1"
+netplan_config_dir:  "/etc/netplan"
+netplan_config_file: "/etc/netplan/99-swcorelim1-netplan.yaml"
+
+ovs_bridge_name:          "br-core"
+ovs_rstp_enabled:         "true"
+ovs_script_path:          "/usr/local/sbin/jhalex-swcorelim1-ovs.sh"
+ovs_service_name:         "jhalex-swcorelim1-ovs"
+ovs_service_path:         "/etc/systemd/system/jhalex-swcorelim1-ovs.service"
+
+ovs_internal_port_name:   "int-core-test"
+ovs_internal_port_ip:     "10.255.21.1"
+ovs_internal_port_prefix: 30
+ovs_internal_port_cidr:   "10.255.21.1/30"
+
+ens34_ip:       "10.10.254.2"
+ens34_prefix:   30
+ens34_cidr:     "10.10.254.2/30"
+ens34_gateway:  "10.10.254.1"
+
+ens35_ip:       "10.10.254.10"
+ens35_prefix:   30
+ens35_cidr:     "10.10.254.10/30"
+
+dns_servers_local:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+required_interfaces:
+  - ens34
+  - ens35
+  - ens36
+  - ens37
+  - ens38
+  - ens39
+  - ens40
+  - ens41
+
+swcorelim1_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+swcorelim1_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd

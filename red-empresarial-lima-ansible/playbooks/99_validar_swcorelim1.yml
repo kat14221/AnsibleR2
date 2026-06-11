@@ -1,0 +1,428 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_swcorelim1.yml
+# =============================================================================
+# Propósito: Validación completa y detallada del estado de SWCORELIM1.
+#            No realiza cambios. Solo verifica y muestra resultados.
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_swcorelim1.yml --ask-become-pass
+#
+# Resultados:
+#   - Tabla completa de validaciones con PASS/FAIL/WARN
+#   - Estado de interfaces, rutas, OVS, bonds, servicios
+#   - Lista de pruebas pendientes por vecinos no configurados
+# =============================================================================
+
+- name: "SWCORELIM1 :: Validación completa — Solo lectura, sin cambios"
+  hosts: swcorelim1
+  gather_facts: true
+  become: true
+
+  vars:
+    # Contadores para resumen final
+    validaciones_ok: []
+    validaciones_fail: []
+    validaciones_warn: []
+
+  tasks:
+    # =========================================================================
+    # SECCIÓN 1 — Banner inicial
+    # =========================================================================
+    - name: "VAL | Banner de inicio"
+      ansible.builtin.debug:
+        msg:
+          - "========================================================="
+          - "  SWCORELIM1 :: Validación completa del sistema"
+          - "  Fecha: {{ ansible_facts['date_time']['iso8601'] | default('N/A') }}"
+          - "========================================================="
+          - "  MODO: Solo lectura. No se realizarán cambios."
+          - "========================================================="
+
+    # =========================================================================
+    # SECCIÓN 2 — Hostname
+    # =========================================================================
+    - name: "VAL-HOSTNAME | Obtener hostname actual"
+      ansible.builtin.command: hostname
+      register: val_hostname
+      changed_when: false
+
+    - name: "VAL-HOSTNAME | Verificar hostname es 'swcorelim1'"
+      ansible.builtin.assert:
+        that:
+          - val_hostname.stdout | lower == "swcorelim1"
+        fail_msg: "FAIL: Hostname es '{{ val_hostname.stdout }}', esperado 'swcorelim1'"
+        success_msg: "PASS: Hostname = {{ val_hostname.stdout }}"
+      ignore_errors: true
+
+    # =========================================================================
+    # SECCIÓN 3 — Interfaces y direccionamiento
+    # =========================================================================
+    - name: "VAL-IFACE | Obtener tabla de interfaces"
+      ansible.builtin.shell: ip -br addr show
+      register: val_iface_table
+      changed_when: false
+
+    - name: "VAL-IFACE | Mostrar tabla de interfaces"
+      ansible.builtin.debug:
+        msg: "{{ val_iface_table.stdout_lines }}"
+
+    - name: "VAL-IFACE | Verificar IP de ens34 (10.10.254.2/30)"
+      ansible.builtin.shell: ip -br addr show ens34
+      register: val_ens34
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-IFACE | Evaluar ens34"
+      ansible.builtin.assert:
+        that:
+          - "'10.10.254.2' in val_ens34.stdout"
+        fail_msg: "FAIL: ens34 no tiene 10.10.254.2/30. Estado: {{ val_ens34.stdout }}"
+        success_msg: "PASS: ens34 tiene 10.10.254.2/30"
+      ignore_errors: true
+
+    - name: "VAL-IFACE | Verificar IP de ens35 (10.10.254.10/30)"
+      ansible.builtin.shell: ip -br addr show ens35
+      register: val_ens35
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-IFACE | Evaluar ens35"
+      ansible.builtin.assert:
+        that:
+          - "'10.10.254.10' in val_ens35.stdout"
+        fail_msg: "FAIL: ens35 no tiene 10.10.254.10/30. Estado: {{ val_ens35.stdout }}"
+        success_msg: "PASS: ens35 tiene 10.10.254.10/30"
+      ignore_errors: true
+
+    - name: "VAL-IFACE | Verificar que ens35 NO tiene gateway (ruta default)"
+      ansible.builtin.shell: ip route show default
+      register: val_default_route
+      changed_when: false
+
+    - name: "VAL-IFACE | Verificar ruta default vía ens34 / 10.10.254.1"
+      ansible.builtin.assert:
+        that:
+          - "'10.10.254.1' in val_default_route.stdout"
+        fail_msg: "FAIL: Ruta default no apunta a 10.10.254.1. Ruta detectada: {{ val_default_route.stdout }}"
+        success_msg: "PASS: Ruta default via 10.10.254.1 (RLIM1)"
+      ignore_errors: true
+
+    - name: "VAL-IFACE | Verificar que ens35 NO aparece en la ruta default"
+      ansible.builtin.assert:
+        that:
+          - "'ens35' not in val_default_route.stdout"
+        fail_msg: "FAIL: ens35 aparece en la ruta default. Esto es INCORRECTO."
+        success_msg: "PASS: ens35 no tiene ruta default asociada."
+      ignore_errors: true
+
+    - name: "VAL-IFACE | Mostrar todas las rutas"
+      ansible.builtin.shell: ip route show
+      register: val_all_routes
+      changed_when: false
+
+    - name: "VAL-IFACE | Tabla de rutas completa"
+      ansible.builtin.debug:
+        msg: "{{ val_all_routes.stdout_lines }}"
+
+    # =========================================================================
+    # SECCIÓN 4 — DNS
+    # =========================================================================
+    - name: "VAL-DNS | Verificar configuración DNS en /etc/resolv.conf"
+      ansible.builtin.shell: cat /etc/resolv.conf
+      register: val_resolv
+      changed_when: false
+
+    - name: "VAL-DNS | Contenido de /etc/resolv.conf"
+      ansible.builtin.debug:
+        msg: "{{ val_resolv.stdout_lines }}"
+
+    - name: "VAL-DNS | Verificar DNS 8.8.8.8 en resolv.conf"
+      ansible.builtin.assert:
+        that:
+          - "'8.8.8.8' in val_resolv.stdout"
+        fail_msg: "WARN: 8.8.8.8 no está en /etc/resolv.conf. DNS puede ser problemático."
+        success_msg: "PASS: DNS 8.8.8.8 configurado."
+      ignore_errors: true
+
+    # =========================================================================
+    # SECCIÓN 5 — Servicios críticos
+    # =========================================================================
+    - name: "VAL-SVC | Verificar estado de ssh"
+      ansible.builtin.command: systemctl is-active ssh
+      register: val_svc_ssh
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar ssh"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ssh.stdout == "active"
+        fail_msg: "FAIL: ssh no está activo. Estado: {{ val_svc_ssh.stdout }}"
+        success_msg: "PASS: ssh activo."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Verificar estado de openvswitch-switch"
+      ansible.builtin.command: systemctl is-active openvswitch-switch
+      register: val_svc_ovs
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar openvswitch-switch"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ovs.stdout == "active"
+        fail_msg: "FAIL: openvswitch-switch no está activo. Estado: {{ val_svc_ovs.stdout }}"
+        success_msg: "PASS: openvswitch-switch activo."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Verificar estado de lldpd"
+      ansible.builtin.command: systemctl is-active lldpd
+      register: val_svc_lldp
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar lldpd"
+      ansible.builtin.assert:
+        that:
+          - val_svc_lldp.stdout == "active"
+        fail_msg: "FAIL: lldpd no está activo. Estado: {{ val_svc_lldp.stdout }}"
+        success_msg: "PASS: lldpd activo."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Verificar servicio jhalex-swcorelim1-ovs"
+      ansible.builtin.command: systemctl is-enabled jhalex-swcorelim1-ovs
+      register: val_svc_ovs_jhalex
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar jhalex-swcorelim1-ovs (habilitado en boot)"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ovs_jhalex.stdout == "enabled"
+        fail_msg: "WARN: jhalex-swcorelim1-ovs no está habilitado en el arranque."
+        success_msg: "PASS: jhalex-swcorelim1-ovs habilitado en el arranque."
+      ignore_errors: true
+
+    # =========================================================================
+    # SECCIÓN 6 — Open vSwitch: Bridge y Bonds
+    # =========================================================================
+    - name: "VAL-OVS | Verificar que br-core existe"
+      ansible.builtin.command: ovs-vsctl br-exists br-core
+      register: val_br_core
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar br-core"
+      ansible.builtin.assert:
+        that:
+          - val_br_core.rc == 0
+        fail_msg: "FAIL: br-core no existe en OVS. El switch Core no está configurado."
+        success_msg: "PASS: br-core existe en OVS."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Obtener estado completo de OVS"
+      ansible.builtin.command: ovs-vsctl show
+      register: val_ovs_show
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Mostrar estado OVS"
+      ansible.builtin.debug:
+        msg: "{{ val_ovs_show.stdout_lines }}"
+
+    - name: "VAL-OVS | Obtener puertos del bridge br-core"
+      ansible.builtin.command: ovs-vsctl list-ports br-core
+      register: val_ovs_ports
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar bond-pcsc1-sc2 (Core-Core)"
+      ansible.builtin.assert:
+        that:
+          - "'bond-pcsc1-sc2' in val_ovs_ports.stdout"
+        fail_msg: "FAIL: bond-pcsc1-sc2 no existe en br-core."
+        success_msg: "PASS: bond-pcsc1-sc2 presente en br-core."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Evaluar bond-pcsc1-sd1 (Core-Dist1)"
+      ansible.builtin.assert:
+        that:
+          - "'bond-pcsc1-sd1' in val_ovs_ports.stdout"
+        fail_msg: "FAIL: bond-pcsc1-sd1 no existe en br-core."
+        success_msg: "PASS: bond-pcsc1-sd1 presente en br-core."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Evaluar bond-pcsc1-sd2 (Core-Dist2)"
+      ansible.builtin.assert:
+        that:
+          - "'bond-pcsc1-sd2' in val_ovs_ports.stdout"
+        fail_msg: "FAIL: bond-pcsc1-sd2 no existe en br-core."
+        success_msg: "PASS: bond-pcsc1-sd2 presente en br-core."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Evaluar int-core-test"
+      ansible.builtin.assert:
+        that:
+          - "'int-core-test' in val_ovs_ports.stdout"
+        fail_msg: "FAIL: int-core-test no existe en br-core."
+        success_msg: "PASS: int-core-test presente en br-core."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar IP de int-core-test (10.255.21.1/30)"
+      ansible.builtin.shell: ip -br addr show int-core-test 2>/dev/null || echo "IFACE_NO_EXISTE"
+      register: val_int_core
+      changed_when: false
+
+    - name: "VAL-OVS | Evaluar IP de int-core-test"
+      ansible.builtin.assert:
+        that:
+          - "'10.255.21.1' in val_int_core.stdout"
+        fail_msg: "FAIL: int-core-test no tiene 10.255.21.1/30. Estado: {{ val_int_core.stdout }}"
+        success_msg: "PASS: int-core-test tiene 10.255.21.1/30."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Mostrar estado de bonds"
+      ansible.builtin.command: ovs-appctl bond/show
+      register: val_ovs_bonds
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Estado de bonds OVS"
+      ansible.builtin.debug:
+        msg: "{{ val_ovs_bonds.stdout_lines }}"
+
+    # =========================================================================
+    # SECCIÓN 7 — Conectividad (pings)
+    # =========================================================================
+    - name: "VAL-PING | Ping a RLIM1 (10.10.254.1) — CRÍTICO"
+      ansible.builtin.shell: ping -c 4 -W 3 10.10.254.1
+      register: val_ping_rlim1
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-PING | Evaluar ping RLIM1"
+      ansible.builtin.assert:
+        that:
+          - val_ping_rlim1.rc == 0
+        fail_msg: >
+          FAIL CRÍTICO: RLIM1 (10.10.254.1) no responde.
+          Verificar: ens34, configuración Netplan, estado de RLIM1.
+          Salida: {{ val_ping_rlim1.stdout }}
+        success_msg: "PASS: RLIM1 (10.10.254.1) responde. Conectividad L3 OK."
+      ignore_errors: true
+
+    - name: "VAL-PING | Ping a RLIM2 (10.10.254.9) — Informativo"
+      ansible.builtin.shell: ping -c 4 -W 3 10.10.254.9
+      register: val_ping_rlim2
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-PING | Resultado RLIM2"
+      ansible.builtin.debug:
+        msg: >
+          {% if val_ping_rlim2.rc == 0 %}
+          PASS: RLIM2 (10.10.254.9) responde. ens35 OK.
+          {% else %}
+          WARN: RLIM2 (10.10.254.9) no responde. Puede ser normal si RLIM2
+          bloquea ICMP. Verificar en RLIM2.
+          {% endif %}
+
+    - name: "VAL-PING | Ping a Internet (8.8.8.8)"
+      ansible.builtin.shell: ping -c 4 -W 5 8.8.8.8
+      register: val_ping_inet
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-PING | Evaluar ping Internet"
+      ansible.builtin.debug:
+        msg: >
+          {% if val_ping_inet.rc == 0 %}
+          PASS: 8.8.8.8 responde. NAT e Internet funcionan.
+          {% else %}
+          WARN: 8.8.8.8 no responde.
+          Si RLIM1 responde pero 8.8.8.8 no, verificar NAT en RLIM1
+          (reglas LINKR1S1 o NAT Outbound).
+          {% endif %}
+
+    - name: "VAL-PING | Ping DNS (google.com)"
+      ansible.builtin.shell: ping -c 2 -W 5 google.com
+      register: val_ping_dns
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-PING | Resultado DNS"
+      ansible.builtin.debug:
+        msg: >
+          {% if val_ping_dns.rc == 0 %}
+          PASS: google.com resuelve y responde. DNS OK.
+          {% else %}
+          WARN: google.com no responde. Posible problema DNS o NAT.
+          {% endif %}
+
+    # =========================================================================
+    # SECCIÓN 8 — Resumen final de validaciones
+    # =========================================================================
+    - name: "VAL | Recopilar resumen final completo"
+      ansible.builtin.shell: |
+        echo "========================================"
+        echo "HOSTNAME"
+        hostname
+        echo ""
+        echo "========================================"
+        echo "INTERFACES"
+        ip -br addr
+        echo ""
+        echo "========================================"
+        echo "RUTAS"
+        ip route
+        echo ""
+        echo "========================================"
+        echo "SERVICIOS"
+        printf "%-30s %s\n" "ssh:" "$(systemctl is-active ssh)"
+        printf "%-30s %s\n" "openvswitch-switch:" "$(systemctl is-active openvswitch-switch)"
+        printf "%-30s %s\n" "lldpd:" "$(systemctl is-active lldpd)"
+        printf "%-30s %s\n" "frr (esperado stopped):" "$(systemctl is-active frr 2>/dev/null || echo stopped)"
+        printf "%-30s %s\n" "keepalived (esperado stopped):" "$(systemctl is-active keepalived 2>/dev/null || echo stopped)"
+        echo ""
+        echo "========================================"
+        echo "OVS"
+        ovs-vsctl show 2>/dev/null || echo "OVS no disponible"
+        echo ""
+        echo "========================================"
+        echo "BONDS"
+        ovs-appctl bond/show 2>/dev/null || echo "Sin bonds activos"
+      register: resumen_validacion
+      changed_when: false
+
+    - name: "VAL | Mostrar resumen completo"
+      ansible.builtin.debug:
+        msg: "{{ resumen_validacion.stdout_lines }}"
+
+    - name: "VAL | Tabla de resultados esperados"
+      ansible.builtin.debug:
+        msg:
+          - "========================================================="
+          - "  TABLA DE VALIDACIONES — SWCORELIM1"
+          - "========================================================="
+          - "  Hostname         : swcorelim1                          "
+          - "  ens34            : 10.10.254.2/30                      "
+          - "  ens35            : 10.10.254.10/30 (sin gateway)       "
+          - "  Ruta default     : via 10.10.254.1 (RLIM1)            "
+          - "  DNS              : 8.8.8.8, 1.1.1.1                   "
+          - "  Bridge OVS       : br-core (RSTP=true)                 "
+          - "  Bond Core-Core   : bond-pcsc1-sc2 (ens36+ens37)       "
+          - "  Bond Core-Dist1  : bond-pcsc1-sd1 (ens38+ens39)       "
+          - "  Bond Core-Dist2  : bond-pcsc1-sd2 (ens40+ens41)       "
+          - "  Interfaz interna : int-core-test → 10.255.21.1/30     "
+          - "  Ping RLIM1       : 10.10.254.1 responde (CRÍTICO)     "
+          - "  Ping RLIM2       : 10.10.254.9 (puede bloquear ICMP)  "
+          - "  Ping Internet    : 8.8.8.8 (depende de NAT en RLIM1)  "
+          - "  DNS              : google.com resuelve                 "
+          - "========================================================="
+          - "  PRUEBAS PENDIENTES (vecinos no configurados aún):"
+          - "  [ ] ping 10.255.21.2  → requiere SWCORELIM2"
+          - "  [ ] bond-pcsc1-sd1 UP → requiere SWDISTLIM1"
+          - "  [ ] bond-pcsc1-sd2 UP → requiere SWDISTLIM2"
+          - "========================================================="
