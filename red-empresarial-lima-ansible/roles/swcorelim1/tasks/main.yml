@@ -146,11 +146,22 @@
   ansible.builtin.command: ovs-vsctl --version
   register: ovs_version
   changed_when: false
+  failed_when: false      # No abortar si OVS no está aún (p.ej. en --check)
+  check_mode: false       # Ejecutar siempre, incluso en dry-run
   tags: packages
 
 - name: "PKG | Versión de OVS instalada"
   ansible.builtin.debug:
-    msg: "{{ ovs_version.stdout_lines | first }}"
+    msg: >-
+      {{
+        ovs_version.stdout_lines[0]
+        if (
+          ovs_version is defined and
+          ovs_version.stdout_lines is defined and
+          (ovs_version.stdout_lines | length) > 0
+        )
+        else 'OVS no disponible o sin salida en esta fase (normal en --check si aun no esta instalado)'
+      }}
   tags: packages
 
 # =============================================================================
@@ -276,8 +287,8 @@
                 via: {{ ens34_gateway | default('10.10.254.1') }}
             nameservers:
               addresses:
-                - {{ dns_servers_local[0] | default('8.8.8.8') }}
-                - {{ dns_servers_local[1] | default('1.1.1.1') }}
+                - {{ (dns_servers_local | default(['8.8.8.8', '1.1.1.1']))[0] }}
+                - {{ (dns_servers_local | default(['8.8.8.8', '1.1.1.1']))[1] }}
 
           # -----------------------------------------------------------------------
           # ens35 - Enlace L3 hacia RLIM2-SECUNDARIO
