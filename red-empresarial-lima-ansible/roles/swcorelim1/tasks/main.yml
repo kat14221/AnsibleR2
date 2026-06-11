@@ -214,7 +214,7 @@
 
 - name: "NETPLAN | Crear directorio de backups"
   ansible.builtin.file:
-    path: "{{ backup_dir | default('/root/backups/swcorelim1') }}"
+    path: "{{ backup_dir | default('/root/backups/swcorelim1') }}/netplan"
     state: directory
     owner: root
     group: root
@@ -224,33 +224,41 @@
 - name: "NETPLAN | Detectar archivos actuales en /etc/netplan/"
   ansible.builtin.find:
     paths: "{{ netplan_config_dir | default('/etc/netplan') }}"
-    patterns: "*.yaml,*.yml"
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+    file_type: file
   register: netplan_existing_files
+  check_mode: false    # Ejecutar siempre: necesitamos el listado real incluso en --check
   tags: netplan
 
 - name: "NETPLAN | Mostrar archivos Netplan detectados"
   ansible.builtin.debug:
-    msg: "Archivos Netplan encontrados: {{ netplan_existing_files.files | map(attribute='path') | list }}"
+    msg: "Archivos Netplan encontrados: {{ netplan_existing_files.files | default([]) | map(attribute='path') | list }}"
   tags: netplan
 
 - name: "NETPLAN | Crear backup con timestamp de cada archivo Netplan existente"
   ansible.builtin.copy:
     src: "{{ item.path }}"
-    dest: "{{ backup_dir | default('/root/backups/swcorelim1') }}/{{ item.path | basename }}.bak.{{ ansible_facts['date_time']['date'] | replace('-','') }}-{{ ansible_facts['date_time']['hour'] }}{{ ansible_facts['date_time']['minute'] }}{{ ansible_facts['date_time']['second'] }}"
+    dest: "{{ backup_dir | default('/root/backups/swcorelim1') }}/netplan/{{ item.path | basename }}.bak.{{ ansible_date_time.iso8601_basic_short }}"
     remote_src: true
     owner: root
     group: root
     mode: "0600"
-  loop: "{{ netplan_existing_files.files }}"
-  when: netplan_existing_files.files | length > 0
+  loop: "{{ netplan_existing_files.files | default([]) }}"
+  when:
+    - item.path is defined
+    - item.isreg | default(false)
+  check_mode: false    # Crear backup real siempre, incluso en dry-run, antes de modificar Netplan
   tags: netplan
 
 - name: "NETPLAN | Informar sobre backups creados"
   ansible.builtin.debug:
     msg: "Backup creado para: {{ item.path }}"
-  loop: "{{ netplan_existing_files.files }}"
-  when: netplan_existing_files.files | length > 0
+  loop: "{{ netplan_existing_files.files | default([]) }}"
+  when: (netplan_existing_files.files | default([]) | length) > 0
   tags: netplan
+
 
 # Escribir el archivo Netplan canónico de SWCORELIM1
 # NOTA CRÍTICA: cada interfaz se declara individualmente (ens36, ens37...ens41).
