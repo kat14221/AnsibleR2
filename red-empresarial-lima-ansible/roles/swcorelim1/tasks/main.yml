@@ -219,6 +219,7 @@
     owner: root
     group: root
     mode: "0700"
+  check_mode: false    # Crear directorio real siempre: el backup copy tambien es check_mode: false
   tags: netplan
 
 - name: "NETPLAN | Detectar archivos actuales en /etc/netplan/"
