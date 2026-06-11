@@ -262,69 +262,11 @@
 
 
 # Escribir el archivo Netplan canónico de SWCORELIM1
-# NOTA CRÍTICA: cada interfaz se declara individualmente (ens36, ens37...ens41).
-# La notación ens36..ens41 es SOLO descripción en comentarios, nunca una clave YAML real.
+# NOTA CRÍTICA: el contenido proviene de swcorelim1_netplan_content (host_vars/swcorelim1.yml)
+# Esa misma variable se usa para validar en --check mode sin leer el archivo físico.
 - name: "NETPLAN | Escribir configuración Netplan de SWCORELIM1"
   ansible.builtin.copy:
-    content: |
-      # =============================================================================
-      # /etc/netplan/99-swcorelim1-netplan.yaml
-      # Configuración de red — SWCORELIM1 (JHALEX — Sede Lima)
-      # Generado por Ansible — No editar manualmente
-      # =============================================================================
-      # REGLAS CRITICAS:
-      #   - ens34 tiene la ruta default (via 10.10.254.1 = RLIM1)
-      #   - ens35 NO tiene gateway (solo IP directa hacia RLIM2)
-      #   - ens36, ens37, ens38, ens39, ens40 y ens41 son miembros OVS sin IP
-      #   - NO usar gateway4 (deprecado). Usar routes: to: default
-      # =============================================================================
-      network:
-        version: 2
-        ethernets:
-
-          # -----------------------------------------------------------------------
-          # ens34 - Enlace L3 hacia RLIM1-PRINCIPAL
-          # IP local: 10.10.254.2/30 | Gateway: 10.10.254.1
-          # CONTIENE la ruta default. NO ELIMINAR.
-          # -----------------------------------------------------------------------
-          ens34:
-            dhcp4: false
-            addresses:
-              - {{ ens34_cidr | default('10.10.254.2/30') }}
-            routes:
-              - to: default
-                via: {{ ens34_gateway | default('10.10.254.1') }}
-            nameservers:
-              addresses:
-                - {{ (dns_servers_local | default(['8.8.8.8', '1.1.1.1']))[0] }}
-                - {{ (dns_servers_local | default(['8.8.8.8', '1.1.1.1']))[1] }}
-
-          # -----------------------------------------------------------------------
-          # ens35 - Enlace L3 hacia RLIM2-SECUNDARIO
-          # IP local: 10.10.254.10/30 | SIN gateway default
-          # Solo para pruebas directas contra RLIM2 (10.10.254.9)
-          # -----------------------------------------------------------------------
-          ens35:
-            dhcp4: false
-            addresses:
-              - {{ ens35_cidr | default('10.10.254.10/30') }}
-
-          # -----------------------------------------------------------------------
-          # Miembros OVS — sin IP. Administradas por Open vSwitch.
-          # Declaradas individualmente (ens36, ens37, ens38, ens39, ens40, ens41)
-          # -----------------------------------------------------------------------
-          ens36:
-            dhcp4: false
-          ens37:
-            dhcp4: false
-          ens38:
-            dhcp4: false
-          ens39:
-            dhcp4: false
-          ens40:
-            dhcp4: false
-          ens41:
-            dhcp4: false
+    content: "{{ swcorelim1_netplan_content }}"
     dest: "{{ netplan_config_file | default('/etc/netplan/99-swcorelim1-netplan.yaml') }}"
     owner: root
     group: root
@@ -332,89 +274,127 @@
   tags: netplan
 
 # =============================================================================
-# BLOQUE 6 — Validar Netplan con generate (sin aplicar)
+# BLOQUE 6 — Validar contenido Netplan (compatible con --check y modo real)
 # =============================================================================
 
-# Mostrar el contenido del archivo antes de validar — inspección visual obligatoria
-- name: "NETPLAN | Leer contenido del archivo Netplan generado"
-  ansible.builtin.shell: "cat {{ netplan_config_file | default('/etc/netplan/99-swcorelim1-netplan.yaml') }}"
+# Leer el archivo físico real (check_mode: false para obtener siempre el contenido actual)
+- name: "NETPLAN | Leer contenido del archivo Netplan en disco"
+  ansible.builtin.shell: "cat {{ netplan_config_file | default('/etc/netplan/99-swcorelim1-netplan.yaml') }} 2>/dev/null || echo 'ARCHIVO_NO_EXISTE'"
   register: netplan_file_content
   changed_when: false
+  check_mode: false    # Siempre leer el estado real del archivo
   tags: netplan
 
-- name: "NETPLAN | Mostrar contenido completo del archivo Netplan (inspección visual)"
+# Seleccionar qué contenido validar:
+#   - En --check: el archivo aún no fue escrito → validar swcorelim1_netplan_content
+#   - En modo real: validar el archivo recién escrito (netplan_file_content.stdout)
+- name: "NETPLAN | Definir contenido Netplan a validar (check vs real)"
+  ansible.builtin.set_fact:
+    netplan_content_to_validate: >-
+      {{
+        swcorelim1_netplan_content
+        if ansible_check_mode
+        else netplan_file_content.stdout
+      }}
+  tags: netplan
+
+- name: "NETPLAN | Mostrar fuente de validación Netplan"
   ansible.builtin.debug:
-    msg: "{{ netplan_file_content.stdout_lines }}"
+    msg: >-
+      {{
+        'MODO CHECK: validando contenido esperado (swcorelim1_netplan_content)'
+        if ansible_check_mode
+        else 'MODO REAL: validando archivo escrito (' + (netplan_config_file | default('/etc/netplan/99-swcorelim1-netplan.yaml')) + ')'
+      }}
   tags: netplan
 
-# Guard crítico: detectar la cadena literal 'ens36..ens41' como clave YAML inválida
-- name: "NETPLAN | Verificar que NO existe la cadena inválida 'ens36..ens41' en el archivo"
+- name: "NETPLAN | Mostrar contenido a validar"
+  ansible.builtin.debug:
+    msg: "{{ netplan_content_to_validate.splitlines() }}"
+  tags: netplan
+
+# Guard 1: NO existe cadena inválida 'ens36..ens41' como clave YAML
+- name: "NETPLAN | Verificar que NO existe la cadena inválida 'ens36..ens41'"
   ansible.builtin.assert:
     that:
-      - "'ens36..ens41' not in netplan_file_content.stdout"
+      - "'ens36..ens41' not in netplan_content_to_validate"
     fail_msg: >
-      ERROR CRÍTICO: El archivo Netplan contiene la cadena inválida 'ens36..ens41'.
+      ERROR CRÍTICO: El contenido Netplan contiene la cadena inválida 'ens36..ens41'.
       Las interfaces deben declararse individualmente: ens36, ens37, ens38, ens39, ens40 y ens41.
-      Cada una con su propia entrada bajo 'ethernets:'.
-      ABORTANDO — corregir el archivo antes de continuar.
-    success_msg: "OK: No se detectó la cadena 'ens36..ens41'. Las interfaces son válidas."
+    success_msg: "OK: No se detectó 'ens36..ens41'. Las interfaces son válidas."
   tags: netplan
 
-# Guard: verificar que gateway4 no aparece en el archivo
+# Guard 2: No se usa gateway4 (deprecado)
 - name: "NETPLAN | Verificar que no se usa 'gateway4' (deprecado)"
   ansible.builtin.assert:
     that:
-      - "'gateway4' not in netplan_file_content.stdout"
+      - "'gateway4' not in netplan_content_to_validate"
     fail_msg: >
-      ERROR: El archivo Netplan contiene 'gateway4', que está deprecado en Ubuntu 24.04.
-      Usar 'routes: - to: default / via: <gateway>' en su lugar.
-    success_msg: "OK: No se usa gateway4. Sintaxis de rutas es moderna."
+      ERROR: El contenido Netplan contiene 'gateway4', deprecado en Ubuntu 24.04.
+      Usar 'routes: - to: default via: <gateway>' en su lugar.
+    success_msg: "OK: No se usa gateway4. Sintaxis de rutas es correcta."
   tags: netplan
 
-# Guard: verificar que ens34 tiene dirección
-- name: "NETPLAN | Verificar que ens34 tiene su IP en el archivo Netplan"
+# Guard 3: ens34 tiene IP 10.10.254.2
+- name: "NETPLAN | Verificar que ens34 tiene su IP en el contenido Netplan"
   ansible.builtin.assert:
     that:
-      - "'10.10.254.2' in netplan_file_content.stdout"
-    fail_msg: "ERROR: IP 10.10.254.2 no encontrada en el archivo Netplan. Revisar la tarea de escritura."
-    success_msg: "OK: IP 10.10.254.2/30 de ens34 presente en Netplan."
+      - "'10.10.254.2' in netplan_content_to_validate"
+    fail_msg: "ERROR: IP 10.10.254.2 no encontrada en el contenido Netplan esperado. Revisar swcorelim1_netplan_content."
+    success_msg: "OK: IP 10.10.254.2/30 de ens34 presente."
   tags: netplan
 
-# Guard: verificar que ens35 tiene dirección y no tiene default route
-- name: "NETPLAN | Verificar que ens35 tiene su IP en el archivo Netplan"
+# Guard 4: ens35 tiene IP 10.10.254.10
+- name: "NETPLAN | Verificar que ens35 tiene su IP en el contenido Netplan"
   ansible.builtin.assert:
     that:
-      - "'10.10.254.10' in netplan_file_content.stdout"
-    fail_msg: "ERROR: IP 10.10.254.10 no encontrada en el archivo Netplan. Revisar la tarea de escritura."
-    success_msg: "OK: IP 10.10.254.10/30 de ens35 presente en Netplan."
+      - "'10.10.254.10' in netplan_content_to_validate"
+    fail_msg: "ERROR: IP 10.10.254.10 no encontrada en el contenido Netplan esperado. Revisar swcorelim1_netplan_content."
+    success_msg: "OK: IP 10.10.254.10/30 de ens35 presente."
   tags: netplan
 
-# Guard: verificar que cada interfaz OVS está declarada individualmente
+# Guard 5: Ruta default via 10.10.254.1 presente
+- name: "NETPLAN | Verificar que la ruta default via 10.10.254.1 está en el contenido Netplan"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.1' in netplan_content_to_validate"
+    fail_msg: "ERROR: Gateway 10.10.254.1 no encontrado en el contenido Netplan. La ruta default no estará configurada."
+    success_msg: "OK: Gateway 10.10.254.1 (ruta default) presente en Netplan."
+  tags: netplan
+
+# Guard 6: ens36..ens41 declaradas individualmente
 - name: "NETPLAN | Verificar que ens36..ens41 están declaradas individualmente"
   ansible.builtin.assert:
     that:
-      - "'ens36:' in netplan_file_content.stdout"
-      - "'ens37:' in netplan_file_content.stdout"
-      - "'ens38:' in netplan_file_content.stdout"
-      - "'ens39:' in netplan_file_content.stdout"
-      - "'ens40:' in netplan_file_content.stdout"
-      - "'ens41:' in netplan_file_content.stdout"
+      - "'ens36:' in netplan_content_to_validate"
+      - "'ens37:' in netplan_content_to_validate"
+      - "'ens38:' in netplan_content_to_validate"
+      - "'ens39:' in netplan_content_to_validate"
+      - "'ens40:' in netplan_content_to_validate"
+      - "'ens41:' in netplan_content_to_validate"
     fail_msg: >
-      ERROR: Una o más de las interfaces ens36..ens41 no aparecen en el archivo Netplan.
-      Cada una debe declararse individualmente con su propia clave YAML.
+      ERROR: Una o más de ens36..ens41 no aparecen en el contenido Netplan.
+      Cada una debe declararse individualmente.
     success_msg: "OK: ens36, ens37, ens38, ens39, ens40, ens41 declaradas individualmente."
   tags: netplan
 
-- name: "NETPLAN | Ejecutar 'netplan generate' para validar sintaxis"
+# netplan generate: solo en modo real (el archivo ya fue escrito)
+- name: "NETPLAN | Ejecutar 'netplan generate' para validar sintaxis (solo modo real)"
   ansible.builtin.command: netplan generate
   register: netplan_generate_result
   changed_when: false
   failed_when: netplan_generate_result.rc != 0
+  when: not ansible_check_mode
   tags: netplan
 
 - name: "NETPLAN | Confirmar que netplan generate fue exitoso — listo para apply"
   ansible.builtin.debug:
-    msg: "netplan generate: RC={{ netplan_generate_result.rc }} — Sintaxis válida. Procediendo a apply."
+    msg: >-
+      {{
+        'MODO CHECK: netplan generate omitido (archivo no escrito aun). Los guards pasaron.'
+        if ansible_check_mode
+        else 'netplan generate: RC=' + (netplan_generate_result.rc | string) + ' — Sintaxis valida. Procediendo a apply.'
+      }}
   tags: netplan
 
 # =============================================================================

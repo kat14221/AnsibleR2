@@ -30,6 +30,61 @@ netplan_config_file: "/etc/netplan/99-swcorelim1-netplan.yaml"
 netplan_config_dir:  "/etc/netplan"
 
 # -----------------------------------------------------------------------
+# Contenido canónico del archivo Netplan de SWCORELIM1
+# Esta variable se usa en DOS lugares:
+#   1. Para escribir el archivo físico (copy task)
+#   2. Para validar el contenido en --check mode (set_fact + asserts)
+# REGLAS CRÍTICAS:
+#   - ens34 tiene la ruta default via 10.10.254.1 (RLIM1)
+#   - ens35 NO tiene gateway (solo IP directa hacia RLIM2)
+#   - ens36..ens41 son miembros OVS sin IP (declarados individualmente)
+#   - NO usar gateway4 (deprecado en Ubuntu 24.04)
+# -----------------------------------------------------------------------
+swcorelim1_netplan_content: |
+  # =============================================================================
+  # /etc/netplan/99-swcorelim1-netplan.yaml
+  # Configuracion de red - SWCORELIM1 (JHALEX - Sede Lima)
+  # Generado por Ansible - No editar manualmente
+  # =============================================================================
+  network:
+    version: 2
+    ethernets:
+
+      # ens34 - Enlace L3 hacia RLIM1-PRINCIPAL (ruta default)
+      ens34:
+        dhcp4: false
+        addresses:
+          - 10.10.254.2/30
+        routes:
+          - to: default
+            via: 10.10.254.1
+        nameservers:
+          addresses:
+            - 8.8.8.8
+            - 1.1.1.1
+
+      # ens35 - Enlace L3 hacia RLIM2-SECUNDARIO (sin gateway)
+      ens35:
+        dhcp4: false
+        addresses:
+          - 10.10.254.10/30
+
+      # Miembros OVS - sin IP (declarados individualmente)
+      ens36:
+        dhcp4: false
+      ens37:
+        dhcp4: false
+      ens38:
+        dhcp4: false
+      ens39:
+        dhcp4: false
+      ens40:
+        dhcp4: false
+      ens41:
+        dhcp4: false
+
+
+# -----------------------------------------------------------------------
 # Interfaces físicas validadas (mapeo ESXi → Linux)
 # NO inventar nombres. Usar EXACTAMENTE estos.
 # -----------------------------------------------------------------------
