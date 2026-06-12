@@ -1,0 +1,125 @@
+# =============================================================================
+# HOST_VARS/SWCORELIM2.YML - Variables Específicas de SWCORELIM2
+# =============================================================================
+# VM función  : Switch Core Secundario de la Sede Lima (JHALEX)
+# Plataforma  : VMware ESXi
+# SO          : Ubuntu Server 24.04 LTS
+# Tecnología  : Open vSwitch (balance-slb, RSTP)
+# Rol         : Core L2/L3 local — no enruta dinámicamente todavía
+#
+# PROHIBIDO configurar: VLANs, VRRP, OSPF, BGP, LACP, ACLs, DHCP, MLAG
+# =============================================================================
+
+---
+swcorelim2_hostname: "swcorelim2"
+backup_dir: "/root/backups/swcorelim2"
+netplan_config_dir: "/etc/netplan"
+netplan_config_file: "/etc/netplan/99-swcorelim2-netplan.yaml"
+
+swcorelim2_netplan_content: |
+  network:
+    version: 2
+    ethernets:
+      ens34:
+        dhcp4: false
+        addresses:
+          - 10.10.254.6/30
+        routes:
+          - to: default
+            via: 10.10.254.5
+        nameservers:
+          addresses:
+            - 8.8.8.8
+            - 1.1.1.1
+      ens35:
+        dhcp4: false
+        addresses:
+          - 10.10.254.14/30
+      ens36:
+        dhcp4: false
+      ens37:
+        dhcp4: false
+      ens38:
+        dhcp4: false
+      ens39:
+        dhcp4: false
+      ens40:
+        dhcp4: false
+      ens41:
+        dhcp4: false
+
+required_interfaces:
+  - ens34
+  - ens35
+  - ens36
+  - ens37
+  - ens38
+  - ens39
+  - ens40
+  - ens41
+
+ens34_ip: "10.10.254.6"
+ens34_prefix: 30
+ens34_cidr: "10.10.254.6/30"
+ens34_network: "10.10.254.4/30"
+ens34_gateway: "10.10.254.5"
+
+ens35_ip: "10.10.254.14"
+ens35_prefix: 30
+ens35_cidr: "10.10.254.14/30"
+ens35_network: "10.10.254.12/30"
+
+dns_servers_local:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+bond_core_core_name: "bond-pcsc1-sc2"
+bond_core_core_members:
+  - ens36
+  - ens37
+bond_core_core_mode: "balance-slb"
+
+bond_core_dist1_name: "bond-pcsc2-sd1"
+bond_core_dist1_members:
+  - ens38
+  - ens39
+bond_core_dist1_mode: "balance-slb"
+
+bond_core_dist2_name: "bond-pcsc2-sd2"
+bond_core_dist2_members:
+  - ens40
+  - ens41
+bond_core_dist2_mode: "balance-slb"
+
+ovs_bridge_name: "br-core"
+ovs_rstp_enabled: "true"
+ovs_internal_port_name: "int-core-test"
+ovs_internal_port_ip: "10.255.21.2"
+ovs_internal_port_prefix: 30
+ovs_internal_port_cidr: "10.255.21.2/30"
+
+ovs_script_path: "/usr/local/sbin/jhalex-swcorelim2-ovs.sh"
+ovs_service_name: "jhalex-swcorelim2-ovs"
+ovs_service_path: "/etc/systemd/system/jhalex-swcorelim2-ovs.service"
+
+swcorelim2_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+swcorelim2_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd

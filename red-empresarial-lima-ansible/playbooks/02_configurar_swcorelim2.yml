@@ -1,0 +1,68 @@
+---
+# =============================================================================
+# PLAYBOOK: 02_configurar_swcorelim2.yml
+# =============================================================================
+# Configuración completa de SWCORELIM2 — Core switch secundario de Sede Lima.
+# =============================================================================
+
+- name: "SWCORELIM2 :: Configuración Core Switch Secundario — Sede Lima (JHALEX)"
+  hosts: swcorelim2
+  gather_facts: true
+  become: true
+
+  vars_files:
+    - "{{ playbook_dir }}/../host_vars/swcorelim2.yml"
+
+  pre_tasks:
+    - name: "PRE | Verificar que swcorelim2_netplan_content está cargada"
+      ansible.builtin.assert:
+        that:
+          - swcorelim2_netplan_content is defined
+          - swcorelim2_netplan_content | length > 0
+        fail_msg: "ERROR: swcorelim2_netplan_content no está cargada."
+        success_msg: "OK: swcorelim2_netplan_content cargada correctamente."
+      tags: always
+
+    - name: "PRE | Verificar que el host de destino es swcorelim2"
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == "swcorelim2"
+        fail_msg: >
+          ERROR: Este playbook solo debe ejecutarse en swcorelim2.
+          Host actual: {{ inventory_hostname }}.
+        success_msg: "OK: Ejecutando en el host correcto: {{ inventory_hostname }}"
+      tags: always
+
+    - name: "PRE | Validar variables críticas de red"
+      ansible.builtin.assert:
+        that:
+          - swcorelim2_hostname is defined and swcorelim2_hostname | length > 0
+          - ens34_ip is defined and ens34_ip | length > 0
+          - ens34_cidr is defined and ens34_cidr | length > 0
+          - ens34_gateway is defined and ens34_gateway | length > 0
+          - ens35_ip is defined and ens35_ip | length > 0
+          - ens35_cidr is defined and ens35_cidr | length > 0
+          - ovs_bridge_name is defined and ovs_bridge_name | length > 0
+          - ovs_script_path is defined and ovs_script_path | length > 0
+          - ovs_service_name is defined and ovs_service_name | length > 0
+        fail_msg: "ERROR CRÍTICO: Variables de red obligatorias no definidas. Revisa host_vars/swcorelim2.yml."
+        success_msg: "OK: Todas las variables críticas están definidas."
+      tags: always
+
+  roles:
+    - role: linux_common
+      vars:
+        rlimengano_hostname: "{{ swcorelim2_hostname }}"
+      tags:
+        - common
+        - hostname
+        - timezone
+        - packages
+
+    - role: swcorelim2
+      tags:
+        - swcorelim2
+        - netplan
+        - ovs
+        - services
+        - packages

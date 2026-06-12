@@ -14,6 +14,8 @@ Este repositorio contiene la configuración Ansible para la infraestructura de l
 | **RLIMENGANO**       | ISP secundario simulado (NAT Gateway)            | ✅ Incluido |
 | RLIM1-PRINCIPAL      | Router/Firewall principal Lima                   | 🔜 Próximo |
 | RLIM2-SECUNDARIO     | Router/Firewall secundario Lima                  | 🔜 Próximo |
+| SWCORELIM1           | Core switch principal Lima                        | ✅ Incluido |
+| SWCORELIM2           | Core switch secundario Lima                       | ✅ Incluido |
 
 ### Arquitectura General
 
@@ -70,11 +72,17 @@ red-empresarial-lima-ansible/
 │   └── all.yml                          # Variables globales del proyecto
 │
 ├── host_vars/
-│   └── rlimengano.yml                   # Variables específicas de RLIMENGANO
+│   ├── rlimengano.yml                   # Variables específicas de RLIMENGANO
+│   ├── swcorelim1.yml                   # Variables específicas de SWCORELIM1
+│   └── swcorelim2.yml                   # Variables específicas de SWCORELIM2
 │
 ├── playbooks/
 │   ├── 01_configurar_rlimengano.yml     # ← Playbook principal de configuración
-│   └── 99_validar_rlimengano.yml        # Playbook de validación (sin cambios)
+│   ├── 02_configurar_swcorelim1.yml     # Playbook de configuración de SWCORELIM1
+│   ├── 02_configurar_swcorelim2.yml     # Playbook de configuración de SWCORELIM2
+│   ├── 99_validar_rlimengano.yml        # Playbook de validación (sin cambios)
+│   ├── 99_validar_swcorelim1.yml        # Validación de SWCORELIM1
+│   └── 99_validar_swcorelim2.yml        # Validación de SWCORELIM2
 │
 ├── roles/
 │   ├── linux_common/                    # Rol base: hostname, paquetes, timezone
@@ -98,7 +106,9 @@ red-empresarial-lima-ansible/
 │
 ├── scripts/
 │   ├── bootstrap_rlimengano.sh          # Instala dependencias (primera vez)
-│   └── run_rlimengano.sh                # Script de ejecución rápida
+│   ├── run_rlimengano.sh                # Script de ejecución rápida
+│   ├── jhalex-swcorelim1-ovs.sh         # Script OVS de SWCORELIM1
+│   └── jhalex-swcorelim2-ovs.sh         # Script OVS de SWCORELIM2
 │
 └── docs/
     ├── direccionamiento_rlimengano.md   # Tablas de IPs y diagrama de red

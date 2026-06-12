@@ -1,0 +1,686 @@
+---
+# =============================================================================
+# ROLE: swcorelim2 — tasks/main.yml
+# =============================================================================
+
+- name: "DIAG | Mostrar hostname y sistema detectado"
+  ansible.builtin.debug:
+    msg:
+      - "======================================================="
+      - "  SWCORELIM2 :: Iniciando configuración"
+      - "======================================================="
+      - "  Inventory host : {{ inventory_hostname }}"
+      - "  OS detectado   : {{ ansible_facts['distribution'] | default('N/A') }} {{ ansible_facts['distribution_version'] | default('') }}"
+      - "  Kernel         : {{ ansible_facts['kernel'] | default('N/A') }}"
+      - "  Fecha          : {{ ansible_facts['date_time']['iso8601'] | default('N/A') }}"
+      - "======================================================="
+  tags: always
+
+- name: "DIAG | Recopilar tabla de interfaces del sistema"
+  ansible.builtin.shell: |
+    echo "=== hostname ==="
+    hostname
+    echo ""
+    echo "=== ip -br link ==="
+    ip -br link
+    echo ""
+    echo "=== ip -br addr ==="
+    ip -br addr
+    echo ""
+    echo "=== ip link show (resumen) ==="
+    ip link show | grep -E '^[0-9]+:|state'
+  register: diag_interfaces
+  changed_when: false
+  tags: always
+
+- name: "DIAG | Mostrar tabla de interfaces actuales"
+  ansible.builtin.debug:
+    msg: "{{ diag_interfaces.stdout_lines }}"
+  tags: always
+
+- name: "DIAG | Verificar interfaces requeridas (ens34..ens41)"
+  ansible.builtin.assert:
+    that:
+      - item in ansible_facts['interfaces']
+    fail_msg: >
+      ERROR CRÍTICO: La interfaz {{ item }} NO existe en este sistema.
+      Interfaces detectadas: {{ ansible_facts['interfaces'] | join(', ') }}.
+      Verificar el mapeo de Port Groups en VMware ESXi.
+    success_msg: "OK: Interfaz {{ item }} detectada."
+  loop: "{{ required_interfaces | default(['ens34','ens35','ens36','ens37','ens38','ens39','ens40','ens41']) }}"
+  tags:
+    - always
+    - validate_interfaces
+
+- name: "HOSTNAME | Configurar hostname del sistema"
+  ansible.builtin.hostname:
+    name: "{{ swcorelim2_hostname | default('swcorelim2') }}"
+    use: systemd
+  tags: hostname
+
+- name: "HOSTNAME | Actualizar /etc/hostname"
+  ansible.builtin.copy:
+    content: "{{ swcorelim2_hostname | default('swcorelim2') }}\n"
+    dest: /etc/hostname
+    owner: root
+    group: root
+    mode: "0644"
+  tags: hostname
+
+- name: "HOSTNAME | Actualizar /etc/hosts con hostname local"
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1\t{{ swcorelim2_hostname | default('swcorelim2') }}"
+    state: present
+    backup: true
+  tags: hostname
+
+- name: "HOSTNAME | Verificar hostname aplicado"
+  ansible.builtin.command: hostname
+  register: hostname_result
+  changed_when: false
+  tags: hostname
+
+- name: "HOSTNAME | Resultado"
+  ansible.builtin.debug:
+    msg: "Hostname actual: {{ hostname_result.stdout }}"
+  tags: hostname
+
+- name: "TIMEZONE | Configurar zona horaria America/Lima"
+  community.general.timezone:
+    name: "{{ timezone | default('America/Lima') }}"
+  tags:
+    - timezone
+    - common
+
+- name: "PKG | Actualizar cache APT"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags: packages
+
+- name: "PKG | Instalar paquetes requeridos para SWCORELIM2"
+  ansible.builtin.apt:
+    name: "{{ swcorelim2_packages | default(['openssh-server','openvswitch-switch','frr','frr-pythontools','keepalived','nftables','lldpd','tcpdump','traceroute','net-tools','curl','wget','vim','git','ansible']) }}"
+    state: present
+  tags: packages
+
+- name: "PKG | Verificar que openvswitch-switch fue instalado"
+  ansible.builtin.command: ovs-vsctl --version
+  register: ovs_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: packages
+
+- name: "PKG | Versión de OVS instalada"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        ovs_version.stdout_lines[0]
+        if (
+          ovs_version is defined and
+          ovs_version.stdout_lines is defined and
+          (ovs_version.stdout_lines | length) > 0
+        )
+        else 'OVS no disponible o sin salida en esta fase (normal en --check si aun no esta instalado)'
+      }}
+  tags: packages
+
+- name: "SVC | Habilitar e iniciar servicios requeridos"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: "{{ swcorelim2_active_services | default(['ssh','openvswitch-switch','lldpd']) }}"
+  tags: services
+
+- name: "SVC | Asegurar que FRR está instalado pero NO habilitado"
+  ansible.builtin.systemd:
+    name: frr
+    enabled: false
+    state: stopped
+  failed_when: false
+  tags: services
+
+- name: "SVC | Asegurar que Keepalived está instalado pero NO habilitado"
+  ansible.builtin.systemd:
+    name: keepalived
+    enabled: false
+    state: stopped
+  failed_when: false
+  tags: services
+
+- name: "SVC | Verificar estado de servicios activos"
+  ansible.builtin.command: "systemctl is-active {{ item }}"
+  register: svc_status
+  changed_when: false
+  failed_when: false
+  loop: "{{ swcorelim2_active_services | default(['ssh','openvswitch-switch','lldpd']) }}"
+  tags: services
+
+- name: "SVC | Mostrar estado de servicios"
+  ansible.builtin.debug:
+    msg: "{{ item.item }}: {{ item.stdout }}"
+  loop: "{{ svc_status.results }}"
+  tags: services
+
+- name: "NETPLAN | Crear directorio de backups"
+  ansible.builtin.file:
+    path: "{{ backup_dir | default('/root/backups/swcorelim2') }}/netplan"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Detectar archivos actuales en /etc/netplan/"
+  ansible.builtin.find:
+    paths: "{{ netplan_config_dir | default('/etc/netplan') }}"
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+    file_type: file
+  register: netplan_existing_files
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Mostrar archivos Netplan detectados"
+  ansible.builtin.debug:
+    msg: "Archivos Netplan encontrados: {{ netplan_existing_files.files | default([]) | map(attribute='path') | list }}"
+  tags: netplan
+
+- name: "NETPLAN | Crear backup con timestamp de cada archivo Netplan existente"
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ backup_dir | default('/root/backups/swcorelim2') }}/netplan/{{ item.path | basename }}.bak.{{ ansible_date_time.iso8601_basic_short }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ netplan_existing_files.files | default([]) }}"
+  when:
+    - item.path is defined
+    - item.isreg | default(false)
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Informar sobre backups creados"
+  ansible.builtin.debug:
+    msg: "Backup creado para: {{ item.path }}"
+  loop: "{{ netplan_existing_files.files | default([]) }}"
+  when: (netplan_existing_files.files | default([]) | length) > 0
+  tags: netplan
+
+- name: "NETPLAN | Escribir configuración Netplan de SWCORELIM2"
+  ansible.builtin.copy:
+    content: "{{ swcorelim2_netplan_content }}"
+    dest: "{{ netplan_config_file | default('/etc/netplan/99-swcorelim2-netplan.yaml') }}"
+    owner: root
+    group: root
+    mode: "0600"
+  tags: netplan
+
+- name: "NETPLAN | Leer contenido del archivo Netplan en disco"
+  ansible.builtin.shell: "cat {{ netplan_config_file | default('/etc/netplan/99-swcorelim2-netplan.yaml') }} 2>/dev/null || echo 'ARCHIVO_NO_EXISTE'"
+  register: netplan_file_content
+  changed_when: false
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Definir contenido Netplan a validar (check vs real)"
+  ansible.builtin.set_fact:
+    netplan_content_to_validate: >-
+      {{
+        swcorelim2_netplan_content
+        if ansible_check_mode
+        else netplan_file_content.stdout
+      }}
+  tags: netplan
+
+- name: "NETPLAN | Mostrar fuente de validación Netplan"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'MODO CHECK: validando contenido esperado (swcorelim2_netplan_content)'
+        if ansible_check_mode
+        else 'MODO REAL: validando archivo escrito (' + (netplan_config_file | default('/etc/netplan/99-swcorelim2-netplan.yaml')) + ')'
+      }}
+  tags: netplan
+
+- name: "NETPLAN | Mostrar contenido a validar"
+  ansible.builtin.debug:
+    msg: "{{ netplan_content_to_validate.splitlines() }}"
+  tags: netplan
+
+- name: "NETPLAN | Verificar que NO existe la cadena inválida 'ens36..ens41'"
+  ansible.builtin.assert:
+    that:
+      - "'ens36..ens41' not in netplan_content_to_validate"
+    fail_msg: >
+      ERROR CRÍTICO: El contenido Netplan contiene la cadena inválida 'ens36..ens41'.
+    success_msg: "OK: No se detectó 'ens36..ens41'."
+  tags: netplan
+
+- name: "NETPLAN | Verificar que no se usa 'gateway4' (deprecado)"
+  ansible.builtin.assert:
+    that:
+      - "'gateway4' not in netplan_content_to_validate"
+    fail_msg: >
+      ERROR: El contenido Netplan contiene 'gateway4', deprecado en Ubuntu 24.04.
+    success_msg: "OK: No se usa gateway4."
+  tags: netplan
+
+- name: "NETPLAN | Verificar que ens34 tiene su IP en el contenido Netplan"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.6' in netplan_content_to_validate"
+    fail_msg: "ERROR: IP 10.10.254.6 no encontrada en el contenido Netplan esperado."
+    success_msg: "OK: IP 10.10.254.6/30 de ens34 presente."
+  tags: netplan
+
+- name: "NETPLAN | Verificar que ens35 tiene su IP en el contenido Netplan"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.14' in netplan_content_to_validate"
+    fail_msg: "ERROR: IP 10.10.254.14 no encontrada en el contenido Netplan esperado."
+    success_msg: "OK: IP 10.10.254.14/30 de ens35 presente."
+  tags: netplan
+
+- name: "NETPLAN | Verificar que la ruta default via 10.10.254.5 está en el contenido Netplan"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.5' in netplan_content_to_validate"
+    fail_msg: "ERROR: Gateway 10.10.254.5 no encontrado en el contenido Netplan."
+    success_msg: "OK: Gateway 10.10.254.5 (ruta default) presente en Netplan."
+  tags: netplan
+
+- name: "NETPLAN | Verificar que ens36..ens41 están declaradas individualmente"
+  ansible.builtin.assert:
+    that:
+      - "'ens36:' in netplan_content_to_validate"
+      - "'ens37:' in netplan_content_to_validate"
+      - "'ens38:' in netplan_content_to_validate"
+      - "'ens39:' in netplan_content_to_validate"
+      - "'ens40:' in netplan_content_to_validate"
+      - "'ens41:' in netplan_content_to_validate"
+    fail_msg: >
+      ERROR: Una o más de ens36..ens41 no aparecen en el contenido Netplan.
+    success_msg: "OK: ens36, ens37, ens38, ens39, ens40, ens41 declaradas individualmente."
+  tags: netplan
+
+- name: "NETPLAN | Ejecutar 'netplan generate' para validar sintaxis (solo modo real)"
+  ansible.builtin.command: netplan generate
+  register: netplan_generate_result
+  changed_when: false
+  failed_when: netplan_generate_result.rc != 0
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Confirmar que netplan generate fue exitoso — listo para apply"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'MODO CHECK: netplan generate omitido (archivo no escrito aun). Los guards pasaron.'
+        if ansible_check_mode
+        else 'netplan generate: RC=' + (netplan_generate_result.rc | string) + ' — Sintaxis valida. Procediendo a apply.'
+      }}
+  tags: netplan
+
+- name: "NETPLAN | Aplicar configuración Netplan"
+  ansible.builtin.command: netplan apply
+  register: netplan_apply_result
+  changed_when: true
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Omitir aplicación runtime de Netplan en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omite netplan apply y la validación runtime posterior porque Netplan no fue aplicado realmente."
+  when: ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Esperar 3 segundos para estabilización de interfaces"
+  ansible.builtin.pause:
+    seconds: 3
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Verificar IPs asignadas post-apply"
+  ansible.builtin.shell: ip -br addr show
+  register: post_netplan_addr
+  changed_when: false
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Mostrar IPs actuales"
+  ansible.builtin.debug:
+    msg: "{{ post_netplan_addr.stdout_lines }}"
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Verificar ruta default posterior a Netplan"
+  ansible.builtin.command: ip route show default
+  register: post_netplan_route
+  changed_when: false
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Mostrar ruta default"
+  ansible.builtin.debug:
+    msg: "{{ post_netplan_route.stdout_lines }}"
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Verificar que la ruta default apunta a 10.10.254.5"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.5' in post_netplan_route.stdout"
+    fail_msg: >
+      ERROR: La ruta default NO apunta a 10.10.254.5.
+      Ruta detectada: {{ post_netplan_route.stdout | default('SIN SALIDA') }}.
+    success_msg: "OK: Ruta default correctamente via 10.10.254.5."
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Omitir validación runtime de ruta default en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omite validación runtime de ip route porque Netplan no fue aplicado realmente. La ruta esperada ya fue validada en swcorelim2_netplan_content."
+  when: ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Ping a RLIM1 (10.10.254.5) — CRÍTICO"
+  ansible.builtin.shell: ping -c 4 -W 3 10.10.254.5
+  register: ping_rlim1
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Evaluar resultado del ping a RLIM1"
+  ansible.builtin.assert:
+    that:
+      - ping_rlim1.rc == 0
+    fail_msg: >
+      ERROR CRÍTICO: RLIM1 (10.10.254.5) no responde ICMP.
+    success_msg: "OK: RLIM1 (10.10.254.5) responde. Conectividad L3 confirmada."
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Ping a RLIM2 (10.10.254.13) — Informativo"
+  ansible.builtin.shell: ping -c 4 -W 3 10.10.254.13
+  register: ping_rlim2
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Resultado ping RLIM2 (informativo)"
+  ansible.builtin.debug:
+    msg: >-
+      {% if ping_rlim2.rc == 0 %}
+      OK: RLIM2 (10.10.254.13) responde. ens35 operativo.
+      {% else %}
+      AVISO: RLIM2 (10.10.254.13) no responde. Puede ser normal si RLIM2 bloquea ICMP.
+      {% endif %}
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Ping a Internet (8.8.8.8) — Informativo"
+  ansible.builtin.shell: ping -c 4 -W 5 8.8.8.8
+  register: ping_internet
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Resultado ping Internet"
+  ansible.builtin.debug:
+    msg: >-
+      {% if ping_internet.rc == 0 %}
+      OK: 8.8.8.8 responde. NAT/routing a Internet funciona.
+      {% else %}
+      AVISO: 8.8.8.8 no responde.
+      {% endif %}
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Resolución DNS (google.com) — Informativa"
+  ansible.builtin.shell: ping -c 2 -W 5 google.com
+  register: ping_dns
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Resultado resolución DNS"
+  ansible.builtin.debug:
+    msg: >-
+      {% if ping_dns.rc == 0 %}
+      OK: DNS funciona. google.com resuelve y responde ping.
+      {% else %}
+      AVISO: google.com no responde. Puede ser problema de DNS o NAT.
+      {% endif %}
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "OVS-SCRIPT | Copiar script OVS a {{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim2-ovs.sh') }}"
+  ansible.builtin.copy:
+    src: "jhalex-swcorelim2-ovs.sh"
+    dest: "{{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim2-ovs.sh') }}"
+    owner: root
+    group: root
+    mode: "0750"
+  tags: ovs
+
+- name: "OVS-SVC | Crear unidad systemd {{ ovs_service_name | default('jhalex-swcorelim2-ovs') }}"
+  ansible.builtin.template:
+    src: "jhalex-swcorelim2-ovs.service.j2"
+    dest: "{{ ovs_service_path | default('/etc/systemd/system/jhalex-swcorelim2-ovs.service') }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "reload systemd"
+  tags: ovs
+
+- name: "OVS-SVC | Recargar systemd daemon"
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Omitir runtime systemd en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omiten daemon_reload, enable y start del servicio jhalex-swcorelim2-ovs porque la unidad no se materializa realmente en dry-run."
+  when: ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Habilitar servicio OVS en el arranque"
+  ansible.builtin.systemd:
+    name: "{{ ovs_service_name | default('jhalex-swcorelim2-ovs') }}"
+    enabled: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Iniciar servicio OVS"
+  ansible.builtin.systemd:
+    name: "{{ ovs_service_name | default('jhalex-swcorelim2-ovs') }}"
+    state: started
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-APPLY | Ejecutar script OVS en este arranque"
+  ansible.builtin.command: "{{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim2-ovs.sh') }}"
+  register: ovs_script_result
+  changed_when: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-APPLY | Omitir ejecución del script OVS en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omite la ejecución runtime del script OVS."
+  when: ansible_check_mode
+  tags: ovs
+
+- name: "OVS-APPLY | Mostrar salida del script OVS"
+  ansible.builtin.debug:
+    msg: "{{ ovs_script_result.stdout_lines }}"
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar que br-core existe"
+  ansible.builtin.command: ovs-vsctl br-exists br-core
+  register: val_br_core
+  changed_when: false
+  failed_when: val_br_core.rc != 0
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Obtener puertos de br-core"
+  ansible.builtin.command: ovs-vsctl list-ports br-core
+  register: val_ovs_ports
+  changed_when: false
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Mostrar puertos de br-core"
+  ansible.builtin.debug:
+    msg: "Puertos en br-core: {{ val_ovs_ports.stdout_lines }}"
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar bond-pcsc1-sc2"
+  ansible.builtin.assert:
+    that:
+      - "'bond-pcsc1-sc2' in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: bond-pcsc1-sc2 NO existe en br-core.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: bond-pcsc1-sc2 presente en br-core."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar bond-pcsc2-sd1"
+  ansible.builtin.assert:
+    that:
+      - "'bond-pcsc2-sd1' in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: bond-pcsc2-sd1 NO existe en br-core.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: bond-pcsc2-sd1 presente en br-core."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar bond-pcsc2-sd2"
+  ansible.builtin.assert:
+    that:
+      - "'bond-pcsc2-sd2' in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: bond-pcsc2-sd2 NO existe en br-core.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: bond-pcsc2-sd2 presente en br-core."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar int-core-test en br-core"
+  ansible.builtin.assert:
+    that:
+      - "'int-core-test' in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: int-core-test NO existe en br-core.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: int-core-test presente en br-core."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Obtener IP de int-core-test"
+  ansible.builtin.shell: ip -br addr show int-core-test 2>/dev/null || echo "IFACE_NO_EXISTE"
+  register: val_int_core_ip
+  changed_when: false
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar IP 10.255.21.2/30 en int-core-test"
+  ansible.builtin.assert:
+    that:
+      - "'10.255.21.2' in val_int_core_ip.stdout"
+    fail_msg: >
+      ERROR: int-core-test no tiene la IP 10.255.21.2/30.
+      Estado actual: {{ val_int_core_ip.stdout }}
+    success_msg: "PASS: int-core-test tiene 10.255.21.2/30."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar que ens34 NO es puerto OVS"
+  ansible.builtin.assert:
+    that:
+      - "'ens34' not in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR CRITICO: ens34 aparece como puerto OVS en br-core.
+    success_msg: "PASS: ens34 NO es puerto OVS."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar que ens35 NO es puerto OVS"
+  ansible.builtin.assert:
+    that:
+      - "'ens35' not in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR CRITICO: ens35 aparece como puerto OVS en br-core.
+    success_msg: "PASS: ens35 NO es puerto OVS."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar IP de ens34 post-OVS (10.10.254.6/30)"
+  ansible.builtin.shell: ip -br addr show ens34
+  register: val_ens34_post_ovs
+  changed_when: false
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Assert ens34 conserva 10.10.254.6/30"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.6' in val_ens34_post_ovs.stdout"
+    fail_msg: >
+      ERROR CRITICO: ens34 perdió su IP 10.10.254.6/30 después de configurar OVS.
+    success_msg: "PASS: ens34 mantiene 10.10.254.6/30 después de OVS."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar IP de ens35 post-OVS (10.10.254.14/30)"
+  ansible.builtin.shell: ip -br addr show ens35 2>/dev/null || echo "IFACE_NO_EXISTE"
+  register: val_ens35_post_ovs
+  changed_when: false
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Assert ens35 conserva 10.10.254.14/30"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.14' in val_ens35_post_ovs.stdout"
+    fail_msg: >
+      ERROR: ens35 perdió su IP 10.10.254.14/30 después de configurar OVS.
+    success_msg: "PASS: ens35 mantiene 10.10.254.14/30 después de OVS."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar ruta default post-OVS"
+  ansible.builtin.shell: ip route show default
+  register: val_default_route_post_ovs
+  changed_when: false
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Assert ruta default sigue siendo via 10.10.254.5"
+  ansible.builtin.assert:
+    that:
+      - "'10.10.254.5' in val_default_route_post_ovs.stdout"
+    fail_msg: >
+      ERROR CRITICO: La ruta default ya no apunta a 10.10.254.5 después de OVS.
+      Ruta actual: {{ val_default_route_post_ovs.stdout }}
+    success_msg: "PASS: Ruta default sigue siendo via 10.10.254.5 (RLIM1)."
+  when: not ansible_check_mode
+  tags: ovs
