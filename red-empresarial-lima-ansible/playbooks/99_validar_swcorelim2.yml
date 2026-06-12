@@ -230,6 +230,30 @@
         success_msg: "PASS: bond-pcsc1-sc2 presente en br-core."
       ignore_errors: true
 
+    - name: "VAL-OVS | Verificar modo active-backup de bond-pcsc1-sc2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sc2 bond_mode
+      register: val_bond_pcsc1_sc2_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar bond-primary ens36 en bond-pcsc1-sc2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sc2 other_config
+      register: val_bond_pcsc1_sc2_other_config
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar bond-pcsc1-sc2 active-backup y bond-primary"
+      ansible.builtin.assert:
+        that:
+          - "'active-backup' in val_bond_pcsc1_sc2_mode.stdout"
+          - "'bond-primary=\"ens36\"' in val_bond_pcsc1_sc2_other_config.stdout or 'bond-primary=ens36' in val_bond_pcsc1_sc2_other_config.stdout"
+        fail_msg: >
+          FAIL: bond-pcsc1-sc2 no está en active-backup o no tiene bond-primary=ens36.
+          bond_mode={{ val_bond_pcsc1_sc2_mode.stdout }}
+          other_config={{ val_bond_pcsc1_sc2_other_config.stdout }}
+        success_msg: "PASS: bond-pcsc1-sc2 usa active-backup con bond-primary=ens36."
+      ignore_errors: true
+
     - name: "VAL-OVS | Verificar bond-pcsc2-sd1"
       ansible.builtin.assert:
         that:
