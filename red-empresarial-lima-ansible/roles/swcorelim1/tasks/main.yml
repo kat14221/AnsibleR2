@@ -544,7 +544,7 @@
     dest: "{{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim1-ovs.sh') }}"
     owner: root
     group: root
-    mode: "0750"
+    mode: "0755"
   tags: ovs
 
 # =============================================================================
@@ -552,28 +552,8 @@
 # =============================================================================
 
 - name: "OVS-SVC | Crear unidad systemd {{ ovs_service_name | default('jhalex-swcorelim1-ovs') }}"
-  ansible.builtin.copy:
-    content: |
-      # =============================================================================
-      # /etc/systemd/system/jhalex-swcorelim1-ovs.service
-      # Servicio systemd — Configura OVS al arranque de SWCORELIM1
-      # Generado por Ansible — No editar manualmente
-      # =============================================================================
-      [Unit]
-      Description=JHALEX SWCORELIM1 — Open vSwitch idempotent configuration
-      Documentation=https://github.com/jhalex/red-empresarial-lima-ansible
-      After=network.target openvswitch-switch.service
-      Requires=openvswitch-switch.service
-
-      [Service]
-      Type=oneshot
-      RemainAfterExit=yes
-      ExecStart={{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim1-ovs.sh') }}
-      StandardOutput=journal
-      StandardError=journal
-
-      [Install]
-      WantedBy=multi-user.target
+  ansible.builtin.template:
+    src: "jhalex-swcorelim1-ovs.service.j2"
     dest: "{{ ovs_service_path | default('/etc/systemd/system/jhalex-swcorelim1-ovs.service') }}"
     owner: root
     group: root
@@ -584,27 +564,37 @@
 - name: "OVS-SVC | Recargar systemd daemon"
   ansible.builtin.systemd:
     daemon_reload: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Omitir runtime systemd en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omiten daemon_reload, enable y start del servicio jhalex-swcorelim1-ovs porque la unidad no se materializa realmente en dry-run."
+  when: ansible_check_mode
   tags: ovs
 
 - name: "OVS-SVC | Habilitar servicio OVS en el arranque"
   ansible.builtin.systemd:
     name: "{{ ovs_service_name | default('jhalex-swcorelim1-ovs') }}"
     enabled: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Iniciar servicio OVS"
+  ansible.builtin.systemd:
+    name: "{{ ovs_service_name | default('jhalex-swcorelim1-ovs') }}"
+    state: restarted
+  when: not ansible_check_mode
   tags: ovs
 
 # =============================================================================
 # BLOQUE 10 — Ejecutar script OVS y verificar
 # =============================================================================
 
-- name: "OVS-APPLY | Ejecutar script OVS en este arranque"
-  ansible.builtin.command: "{{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim1-ovs.sh') }}"
-  register: ovs_script_result
-  changed_when: true
-  tags: ovs
-
-- name: "OVS-APPLY | Mostrar salida del script OVS"
+- name: "OVS-APPLY | Omitir ejecución del script OVS en check mode"
   ansible.builtin.debug:
-    msg: "{{ ovs_script_result.stdout_lines }}"
+    msg: "CHECK MODE: se omite la ejecución runtime del script OVS."
+  when: ansible_check_mode
   tags: ovs
 
 # =============================================================================

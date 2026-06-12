@@ -180,12 +180,26 @@
       changed_when: false
       failed_when: false
 
+    - name: "VAL-SVC | Verificar estado active/exited de jhalex-swcorelim2-ovs"
+      ansible.builtin.command: systemctl is-active jhalex-swcorelim2-ovs
+      register: val_svc_ovs_jhalex_state
+      changed_when: false
+      failed_when: false
+
     - name: "VAL-SVC | Evaluar jhalex-swcorelim2-ovs"
       ansible.builtin.assert:
         that:
           - val_svc_ovs_jhalex.stdout == "enabled"
         fail_msg: "FAIL: jhalex-swcorelim2-ovs no está habilitado. Estado: {{ val_svc_ovs_jhalex.stdout }}"
         success_msg: "PASS: jhalex-swcorelim2-ovs habilitado."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Evaluar estado de jhalex-swcorelim2-ovs"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ovs_jhalex_state.stdout in ["active", "exited"]
+        fail_msg: "FAIL: jhalex-swcorelim2-ovs no está active/exited. Estado: {{ val_svc_ovs_jhalex_state.stdout }}"
+        success_msg: "PASS: jhalex-swcorelim2-ovs está active/exited."
       ignore_errors: true
 
     - name: "VAL-OVS | Verificar que br-core existe"

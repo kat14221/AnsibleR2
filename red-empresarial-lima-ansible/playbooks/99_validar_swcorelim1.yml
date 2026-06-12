@@ -197,12 +197,26 @@
       changed_when: false
       failed_when: false
 
+    - name: "VAL-SVC | Verificar estado active/exited de jhalex-swcorelim1-ovs"
+      ansible.builtin.command: systemctl is-active jhalex-swcorelim1-ovs
+      register: val_svc_ovs_jhalex_state
+      changed_when: false
+      failed_when: false
+
     - name: "VAL-SVC | Evaluar jhalex-swcorelim1-ovs (habilitado en boot)"
       ansible.builtin.assert:
         that:
           - val_svc_ovs_jhalex.stdout == "enabled"
         fail_msg: "WARN: jhalex-swcorelim1-ovs no está habilitado en el arranque."
         success_msg: "PASS: jhalex-swcorelim1-ovs habilitado en el arranque."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Evaluar estado de jhalex-swcorelim1-ovs"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ovs_jhalex_state.stdout in ["active", "exited"]
+        fail_msg: "FAIL: jhalex-swcorelim1-ovs no está active/exited. Estado: {{ val_svc_ovs_jhalex_state.stdout }}"
+        success_msg: "PASS: jhalex-swcorelim1-ovs está active/exited."
       ignore_errors: true
 
     # =========================================================================

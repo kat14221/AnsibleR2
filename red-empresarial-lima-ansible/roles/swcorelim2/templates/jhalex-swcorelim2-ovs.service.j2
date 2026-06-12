@@ -1,15 +1,13 @@
 [Unit]
-Description=JHALEX SWCORELIM2 — Open vSwitch idempotent configuration
-Documentation=https://github.com/jhalex/red-empresarial-lima-ansible
-After=network.target openvswitch-switch.service
+Description=JHALEX SWCORELIM2 OVS Core Bridge and Bonds
+After=network-online.target openvswitch-switch.service
+Wants=network-online.target
 Requires=openvswitch-switch.service
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 ExecStart={{ ovs_script_path | default('/usr/local/sbin/jhalex-swcorelim2-ovs.sh') }}
-StandardOutput=journal
-StandardError=journal
+RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
