@@ -427,11 +427,13 @@
   ansible.builtin.shell: ip route show default
   register: post_netplan_route
   changed_when: false
+  when: not ansible_check_mode
   tags: netplan
 
 - name: "NETPLAN | Mostrar ruta default"
   ansible.builtin.debug:
     msg: "{{ post_netplan_route.stdout_lines }}"
+  when: not ansible_check_mode
   tags: netplan
 
 - name: "NETPLAN | Verificar que la ruta default apunta a 10.10.254.1"
@@ -440,9 +442,16 @@
       - "'10.10.254.1' in post_netplan_route.stdout"
     fail_msg: >
       ERROR: La ruta default NO apunta a 10.10.254.1.
-      Ruta detectada: {{ post_netplan_route.stdout }}.
+      Ruta detectada: {{ post_netplan_route.stdout | default('SIN SALIDA') }}.
       ABORTANDO — No continuar con configuración OVS.
     success_msg: "OK: Ruta default correctamente via 10.10.254.1 (RLIM1)."
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Omitir validación runtime de ruta default en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omite validación runtime de ip route porque Netplan no fue aplicado realmente. La ruta esperada ya fue validada en swcorelim1_netplan_content."
+  when: ansible_check_mode
   tags: netplan
 
 # Prueba crítica: ping a RLIM1
