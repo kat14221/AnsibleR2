@@ -308,6 +308,20 @@
         success_msg: "PASS: int-core-test presente en br-core."
       ignore_errors: true
 
+    - name: "VAL-OVS | Verificar tag VLAN 99 en int-core-test"
+      ansible.builtin.command: ovs-vsctl get port int-core-test tag
+      register: val_int_core_tag
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar tag VLAN 99 en int-core-test"
+      ansible.builtin.assert:
+        that:
+          - val_int_core_tag.stdout | trim == "99"
+        fail_msg: "FAIL: int-core-test no tiene tag VLAN 99. Tag detectado: {{ val_int_core_tag.stdout | trim }}"
+        success_msg: "PASS: int-core-test tiene tag VLAN 99."
+      ignore_errors: true
+
     - name: "VAL-OVS | Verificar IP de int-core-test (10.255.21.1/30)"
       ansible.builtin.shell: ip -br addr show int-core-test 2>/dev/null || echo "IFACE_NO_EXISTE"
       register: val_int_core

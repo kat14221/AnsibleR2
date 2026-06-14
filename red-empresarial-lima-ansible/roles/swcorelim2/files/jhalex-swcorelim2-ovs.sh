@@ -22,6 +22,7 @@ ovs-vsctl add-bond br-core bond-pcsc2-sd1 ens38 ens39 bond_mode=balance-slb lacp
 ovs-vsctl add-bond br-core bond-pcsc2-sd2 ens40 ens41 bond_mode=balance-slb lacp=off
 
 ovs-vsctl add-port br-core int-core-test -- set Interface int-core-test type=internal
+ovs-vsctl set port int-core-test tag=99
 
 ip link set br-core up || true
 ip link set bond-pcsc1-sc2 up || true
