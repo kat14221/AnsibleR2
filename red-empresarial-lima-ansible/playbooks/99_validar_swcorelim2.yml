@@ -254,6 +254,90 @@
         success_msg: "PASS: bond-pcsc1-sc2 usa active-backup con bond-primary=ens36."
       ignore_errors: true
 
+    - name: "VAL-OVS | Verificar que bond-pcsc1-sc2 NO tiene trunks"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sc2 trunks
+      register: val_bond_pcsc1_sc2_trunks
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar que bond-pcsc1-sc2 NO tiene trunks"
+      ansible.builtin.assert:
+        that:
+          - "val_bond_pcsc1_sc2_trunks.stdout == '[]' or val_bond_pcsc1_sc2_trunks.stdout == ''"
+        fail_msg: "FAIL: bond-pcsc1-sc2 tiene trunks configurados, NO debería tenerlos."
+        success_msg: "PASS: bond-pcsc1-sc2 NO tiene trunks."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que bond-pcsc1-sc2 NO tiene tag"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sc2 tag
+      register: val_bond_pcsc1_sc2_tag
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar que bond-pcsc1-sc2 NO tiene tag"
+      ansible.builtin.assert:
+        that:
+          - "val_bond_pcsc1_sc2_tag.stdout == '[]' or val_bond_pcsc1_sc2_tag.stdout == ''"
+        fail_msg: "FAIL: bond-pcsc1-sc2 tiene tag configurado, NO debería tenerlo."
+        success_msg: "PASS: bond-pcsc1-sc2 NO tiene tag."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que bond-pcsc1-sc2 NO tiene vlan_mode"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sc2 vlan_mode
+      register: val_bond_pcsc1_sc2_vlan_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar que bond-pcsc1-sc2 NO tiene vlan_mode"
+      ansible.builtin.assert:
+        that:
+          - "val_bond_pcsc1_sc2_vlan_mode.stdout == '[]' or val_bond_pcsc1_sc2_vlan_mode.stdout == ''"
+        fail_msg: "FAIL: bond-pcsc1-sc2 tiene vlan_mode configurado, NO debería tenerlo."
+        success_msg: "PASS: bond-pcsc1-sc2 NO tiene vlan_mode."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar lacp=off en bond-pcsc1-sc2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sc2 lacp
+      register: val_bond_pcsc1_sc2_lacp
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar lacp=off en bond-pcsc1-sc2"
+      ansible.builtin.assert:
+        that:
+          - "'off' in val_bond_pcsc1_sc2_lacp.stdout"
+        fail_msg: "FAIL: bond-pcsc1-sc2 NO tiene lacp=off."
+        success_msg: "PASS: bond-pcsc1-sc2 tiene lacp=off."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar fail_mode=standalone en br-core"
+      ansible.builtin.command: ovs-vsctl get bridge br-core fail_mode
+      register: val_br_core_fail_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar fail_mode=standalone en br-core"
+      ansible.builtin.assert:
+        that:
+          - "'standalone' in val_br_core_fail_mode.stdout"
+        fail_msg: "FAIL: br-core NO tiene fail_mode=standalone."
+        success_msg: "PASS: br-core tiene fail_mode=standalone."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar rstp_enable=false en br-core"
+      ansible.builtin.command: ovs-vsctl get bridge br-core rstp_enable
+      register: val_br_core_rstp_enable
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar rstp_enable=false en br-core"
+      ansible.builtin.assert:
+        that:
+          - "val_br_core_rstp_enable.stdout == 'false'"
+        fail_msg: "FAIL: br-core NO tiene rstp_enable=false."
+        success_msg: "PASS: br-core tiene rstp_enable=false."
+      ignore_errors: true
+
     - name: "VAL-OVS | Verificar bond-pcsc2-sd1"
       ansible.builtin.assert:
         that:
@@ -289,4 +373,89 @@
           - "'10.255.21.2' in val_br_core.stdout"
         fail_msg: "FAIL: br-core no tiene 10.255.21.2/30. Estado: {{ val_br_core.stdout }}"
         success_msg: "PASS: br-core tiene 10.255.21.2/30."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que no existe br-core-cc"
+      ansible.builtin.command: ovs-vsctl br-exists br-core-cc
+      register: val_br_core_cc
+      failed_when: false
+      changed_when: false
+
+    - name: "VAL-OVS | Evaluar que br-core-cc no existe"
+      ansible.builtin.assert:
+        that:
+          - val_br_core_cc.rc != 0
+        fail_msg: "FAIL: br-core-cc aún existe (no debería)"
+        success_msg: "PASS: br-core-cc no existe (correcto)"
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que no existe br-core-sd1"
+      ansible.builtin.command: ovs-vsctl br-exists br-core-sd1
+      register: val_br_core_sd1
+      failed_when: false
+      changed_when: false
+
+    - name: "VAL-OVS | Evaluar que br-core-sd1 no existe"
+      ansible.builtin.assert:
+        that:
+          - val_br_core_sd1.rc != 0
+        fail_msg: "FAIL: br-core-sd1 aún existe (no debería)"
+        success_msg: "PASS: br-core-sd1 no existe (correcto)"
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que no existe br-core-sd2"
+      ansible.builtin.command: ovs-vsctl br-exists br-core-sd2
+      register: val_br_core_sd2
+      failed_when: false
+      changed_when: false
+
+    - name: "VAL-OVS | Evaluar que br-core-sd2 no existe"
+      ansible.builtin.assert:
+        that:
+          - val_br_core_sd2.rc != 0
+        fail_msg: "FAIL: br-core-sd2 aún existe (no debería)"
+        success_msg: "PASS: br-core-sd2 no existe (correcto)"
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que no existe bond-psc1-sc2"
+      ansible.builtin.shell: ovs-vsctl list-ports br-core | grep -q bond-psc1-sc2
+      register: val_bond_psc1_sc2
+      failed_when: false
+      changed_when: false
+
+    - name: "VAL-OVS | Evaluar que bond-psc1-sc2 no existe"
+      ansible.builtin.assert:
+        that:
+          - val_bond_psc1_sc2.rc != 0
+        fail_msg: "FAIL: bond-psc1-sc2 aún existe (no debería)"
+        success_msg: "PASS: bond-psc1-sc2 no existe (correcto)"
+      ignore_errors: true
+
+    - name: "VAL-OVS | Mostrar estado de bonds"
+      ansible.builtin.command: ovs-appctl bond/show
+      register: val_ovs_bonds
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Estado de bonds OVS"
+      ansible.builtin.debug:
+        msg: "{{ val_ovs_bonds.stdout_lines }}"
+
+    # =========================================================================
+    # SECCIÓN 7 — Conectividad (pings)
+    # =========================================================================
+    - name: "VAL-PING | Ping a SWCORELIM1 (10.255.21.1) — CRÍTICO"
+      ansible.builtin.shell: ping -c 4 -W 3 10.255.21.1
+      register: val_ping_swcorelim1
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-PING | Evaluar ping a SWCORELIM1"
+      ansible.builtin.assert:
+        that:
+          - val_ping_swcorelim1.rc == 0
+        fail_msg: >
+          ERROR: Core-Core no responde. Revisar bond-pcsc1-sc2, Port Groups ESXi PCSC1-SC2(1)/(2), VLAN 4095 y seguridad Accept.
+          Salida: {{ val_ping_swcorelim1.stdout }}
+        success_msg: "PASS: Core-Core conectividad OK (10.255.21.2 → 10.255.21.1)."
       ignore_errors: true
