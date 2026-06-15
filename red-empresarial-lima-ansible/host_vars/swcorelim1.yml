@@ -144,7 +144,8 @@ bond_core_core_name:     "bond-pcsc1-sc2"
 bond_core_core_members:
   - ens36
   - ens37
-bond_core_core_mode:     "balance-slb"
+bond_core_core_mode:     "active-backup"
+bond_core_core_primary:  "ens36"
 
 # -----------------------------------------------------------------------
 # Interfaces OVS Bond — Core1-Dist1 (SWDISTLIM1)
@@ -153,7 +154,8 @@ bond_core_dist1_name:    "bond-pcsc1-sd1"
 bond_core_dist1_members:
   - ens38
   - ens39
-bond_core_dist1_mode:    "balance-slb"
+bond_core_dist1_mode:    "active-backup"
+bond_core_dist1_primary: "ens38"
 
 # -----------------------------------------------------------------------
 # Interfaces OVS Bond — Core1-Dist2 (SWDISTLIM2)
@@ -162,7 +164,8 @@ bond_core_dist2_name:    "bond-pcsc1-sd2"
 bond_core_dist2_members:
   - ens40
   - ens41
-bond_core_dist2_mode:    "balance-slb"
+bond_core_dist2_mode:    "active-backup"
+bond_core_dist2_primary: "ens40"
 
 # -----------------------------------------------------------------------
 # Bridge OVS principal
@@ -171,16 +174,11 @@ ovs_bridge_name:     "br-core"
 ovs_rstp_enabled:    "true"
 
 # -----------------------------------------------------------------------
-# Interfaz interna OVS de prueba Core-Core
-# Usada para validar el port-channel ens36/ens37 hacia SWCORELIM2.
-# IP local: 10.255.21.1/30
-# IP futura SWCORELIM2: 10.255.21.2/30
-# NO participa en OSPF. NO reemplaza la ruta default.
+# IP del bridge br-core para enlace Core-Core
 # -----------------------------------------------------------------------
-ovs_internal_port_name: "int-core-test"
-ovs_internal_port_ip:   "10.255.21.1"
-ovs_internal_port_prefix: 30
-ovs_internal_port_cidr: "10.255.21.1/30"
+ovs_bridge_ip:        "10.255.21.1"
+ovs_bridge_prefix:    30
+ovs_bridge_cidr:      "10.255.21.1/30"
 
 # -----------------------------------------------------------------------
 # Script OVS idempotente y servicio systemd

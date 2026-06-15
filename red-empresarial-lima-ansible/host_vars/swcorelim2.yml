@@ -77,26 +77,28 @@ bond_core_core_name: "bond-pcsc1-sc2"
 bond_core_core_members:
   - ens36
   - ens37
-bond_core_core_mode: "balance-slb"
+bond_core_core_mode: "active-backup"
+bond_core_core_primary: "ens36"
 
 bond_core_dist1_name: "bond-pcsc2-sd1"
 bond_core_dist1_members:
   - ens38
   - ens39
-bond_core_dist1_mode: "balance-slb"
+bond_core_dist1_mode: "active-backup"
+bond_core_dist1_primary: "ens38"
 
 bond_core_dist2_name: "bond-pcsc2-sd2"
 bond_core_dist2_members:
   - ens40
   - ens41
-bond_core_dist2_mode: "balance-slb"
+bond_core_dist2_mode: "active-backup"
+bond_core_dist2_primary: "ens40"
 
 ovs_bridge_name: "br-core"
 ovs_rstp_enabled: "true"
-ovs_internal_port_name: "int-core-test"
-ovs_internal_port_ip: "10.255.21.2"
-ovs_internal_port_prefix: 30
-ovs_internal_port_cidr: "10.255.21.2/30"
+ovs_bridge_ip: "10.255.21.2"
+ovs_bridge_prefix: 30
+ovs_bridge_cidr: "10.255.21.2/30"
 
 ovs_script_path: "/usr/local/sbin/jhalex-swcorelim2-ovs.sh"
 ovs_service_name: "jhalex-swcorelim2-ovs"

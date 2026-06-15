@@ -16,10 +16,9 @@ ovs_script_path:          "/usr/local/sbin/jhalex-swcorelim1-ovs.sh"
 ovs_service_name:         "jhalex-swcorelim1-ovs"
 ovs_service_path:         "/etc/systemd/system/jhalex-swcorelim1-ovs.service"
 
-ovs_internal_port_name:   "int-core-test"
-ovs_internal_port_ip:     "10.255.21.1"
-ovs_internal_port_prefix: 30
-ovs_internal_port_cidr:   "10.255.21.1/30"
+ovs_bridge_ip:         "10.255.21.1"
+ovs_bridge_prefix:     30
+ovs_bridge_cidr:       "10.255.21.1/30"
 
 ens34_ip:       "10.10.254.2"
 ens34_prefix:   30

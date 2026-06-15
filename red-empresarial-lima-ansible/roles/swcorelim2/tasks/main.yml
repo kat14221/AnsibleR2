@@ -571,32 +571,32 @@
   when: not ansible_check_mode
   tags: ovs
 
-- name: "OVS-VAL | Verificar int-core-test en br-core"
-  ansible.builtin.assert:
-    that:
-      - "'int-core-test' in val_ovs_ports.stdout"
-    fail_msg: >
-      ERROR: int-core-test NO existe en br-core.
-      Puertos actuales: {{ val_ovs_ports.stdout }}
-    success_msg: "PASS: int-core-test presente en br-core."
-  when: not ansible_check_mode
-  tags: ovs
-
-- name: "OVS-VAL | Obtener IP de int-core-test"
-  ansible.builtin.shell: ip -br addr show int-core-test 2>/dev/null || echo "IFACE_NO_EXISTE"
-  register: val_int_core_ip
+- name: "OVS-VAL | Obtener IP de br-core"
+  ansible.builtin.shell: ip -br addr show br-core 2>/dev/null || echo "IFACE_NO_EXISTE"
+  register: val_br_core_ip
   changed_when: false
   when: not ansible_check_mode
   tags: ovs
 
-- name: "OVS-VAL | Verificar IP 10.255.21.2/30 en int-core-test"
+- name: "OVS-VAL | Verificar IP 10.255.21.2/30 en br-core"
   ansible.builtin.assert:
     that:
-      - "'10.255.21.2' in val_int_core_ip.stdout"
+      - "'10.255.21.2' in val_br_core_ip.stdout"
     fail_msg: >
-      ERROR: int-core-test no tiene la IP 10.255.21.2/30.
-      Estado actual: {{ val_int_core_ip.stdout }}
-    success_msg: "PASS: int-core-test tiene 10.255.21.2/30."
+      ERROR: br-core no tiene la IP 10.255.21.2/30.
+      Estado actual: {{ val_br_core_ip.stdout }}
+    success_msg: "PASS: br-core tiene 10.255.21.2/30."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar que NO existe int-core-test"
+  ansible.builtin.assert:
+    that:
+      - "'int-core-test' not in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: int-core-test todavía existe en br-core.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: int-core-test NO está presente (correcto)."
   when: not ansible_check_mode
   tags: ovs
 
