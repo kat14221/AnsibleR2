@@ -39,10 +39,6 @@ swcorelim2_netplan_content: |
         dhcp4: false
       ens37:
         dhcp4: false
-      ens38:
-        dhcp4: false
-      ens39:
-        dhcp4: false
       ens40:
         dhcp4: false
       ens41:
@@ -53,8 +49,6 @@ required_interfaces:
   - ens35
   - ens36
   - ens37
-  - ens38
-  - ens39
   - ens40
   - ens41
 
@@ -80,22 +74,15 @@ bond_core_core_members:
 bond_core_core_mode: "active-backup"
 bond_core_core_primary: "ens36"
 
-bond_core_dist1_name: "bond-pcsc2-sd1"
-bond_core_dist1_members:
-  - ens38
-  - ens39
-bond_core_dist1_mode: "active-backup"
-bond_core_dist1_primary: "ens38"
-
 bond_core_dist2_name: "bond-pcsc2-sd2"
 bond_core_dist2_members:
-  - ens40
   - ens41
+  - ens40
 bond_core_dist2_mode: "active-backup"
-bond_core_dist2_primary: "ens40"
+bond_core_dist2_primary: "ens41"
 
 ovs_bridge_name: "br-core"
-ovs_rstp_enabled: "true"
+ovs_rstp_enabled: "false"
 ovs_bridge_ip: "10.255.21.2"
 ovs_bridge_prefix: 30
 ovs_bridge_cidr: "10.255.21.2/30"

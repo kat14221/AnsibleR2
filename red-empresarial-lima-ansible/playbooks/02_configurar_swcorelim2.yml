@@ -3,6 +3,24 @@
 # PLAYBOOK: 02_configurar_swcorelim2.yml
 # =============================================================================
 # Configuración completa de SWCORELIM2 — Core switch secundario de Sede Lima.
+#
+# Ejecutar desde SWCORELIM2 (local) o desde controller externo con SSH:
+#
+#   [Local — ejecutar en SWCORELIM2 directamente]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim2.yml -e @host_vars/swcorelim2.yml -vv -K
+#
+#   [Dry-run — sin cambios]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim2.yml -e @host_vars/swcorelim2.yml -vv -K --check --diff
+#
+#   [Solo Netplan]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim2.yml -e @host_vars/swcorelim2.yml -vv -K --tags netplan
+#
+#   [Solo OVS]
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/02_configurar_swcorelim2.yml -e @host_vars/swcorelim2.yml -vv -K --tags ovs
 # =============================================================================
 
 - name: "SWCORELIM2 :: Configuración Core Switch Secundario — Sede Lima (JHALEX)"

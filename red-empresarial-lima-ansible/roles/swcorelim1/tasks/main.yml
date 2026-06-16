@@ -60,8 +60,8 @@
     msg: "{{ diag_interfaces.stdout_lines }}"
   tags: always
 
-# Validar que ens34..ens41 están presentes
-- name: "DIAG | Verificar interfaces requeridas (ens34..ens41)"
+# Validar que las interfaces requeridas están presentes
+- name: "DIAG | Verificar interfaces requeridas"
   ansible.builtin.assert:
     that:
       - item in ansible_facts['interfaces']
@@ -71,7 +71,7 @@
       Verificar el mapeo de Port Groups en VMware ESXi.
       ABORTANDO para no perder conectividad.
     success_msg: "OK: Interfaz {{ item }} detectada."
-  loop: "{{ required_interfaces | default(['ens34','ens35','ens36','ens37','ens38','ens39','ens40','ens41']) }}"
+  loop: "{{ required_interfaces | default(['ens34','ens35','ens36','ens37','ens38','ens39']) }}"
   tags:
     - always
     - validate_interfaces
@@ -362,20 +362,18 @@
     success_msg: "OK: Gateway 10.10.254.1 (ruta default) presente en Netplan."
   tags: netplan
 
-# Guard 6: ens36..ens41 declaradas individualmente
-- name: "NETPLAN | Verificar que ens36..ens41 están declaradas individualmente"
+# Guard 6: ens36..ens39 declaradas individualmente
+- name: "NETPLAN | Verificar que ens36..ens39 están declaradas individualmente"
   ansible.builtin.assert:
     that:
       - "'ens36:' in netplan_content_to_validate"
       - "'ens37:' in netplan_content_to_validate"
       - "'ens38:' in netplan_content_to_validate"
       - "'ens39:' in netplan_content_to_validate"
-      - "'ens40:' in netplan_content_to_validate"
-      - "'ens41:' in netplan_content_to_validate"
     fail_msg: >
-      ERROR: Una o más de ens36..ens41 no aparecen en el contenido Netplan.
+      ERROR: Una o más de ens36..ens39 no aparecen en el contenido Netplan.
       Cada una debe declararse individualmente.
-    success_msg: "OK: ens36, ens37, ens38, ens39, ens40, ens41 declaradas individualmente."
+    success_msg: "OK: ens36, ens37, ens38, ens39 declaradas individualmente."
   tags: netplan
 
 # netplan generate: solo en modo real (el archivo ya fue escrito)
@@ -641,14 +639,14 @@
     success_msg: "PASS: bond-pcsc1-sd1 presente en br-core."
   tags: ovs
 
-- name: "OVS-VAL | Verificar bond-pcsc1-sd2 (Core → SWDISTLIM2)"
+- name: "OVS-VAL | Verificar que NO existe bond-pcsc1-sd2"
   ansible.builtin.assert:
     that:
-      - "'bond-pcsc1-sd2' in val_ovs_ports.stdout"
+      - "'bond-pcsc1-sd2' not in val_ovs_ports.stdout"
     fail_msg: >
-      ERROR: bond-pcsc1-sd2 NO existe en br-core.
+      ERROR: bond-pcsc1-sd2 todavía existe en br-core.
       Puertos actuales: {{ val_ovs_ports.stdout }}
-    success_msg: "PASS: bond-pcsc1-sd2 presente en br-core."
+    success_msg: "PASS: bond-pcsc1-sd2 NO está presente (correcto)."
   tags: ovs
 
 # --- 11.3: br-core tiene IP 10.255.21.1/30 ---
@@ -796,7 +794,7 @@
       - "  br-core         : EXISTE con 10.255.21.1/30"
       - "  bond-pcsc1-sc2  : EXISTE en br-core (ens36+ens37 | active-backup)"
       - "  bond-pcsc1-sd1  : EXISTE en br-core (ens38+ens39 | active-backup | trunk L2)"
-      - "  bond-pcsc1-sd2  : EXISTE en br-core (ens40+ens41 | active-backup | trunk L2)"
+      - "  bond-pcsc1-sd2  : NO EXISTE (correcto)"
       - "  int-core-test   : NO EXISTE (correcto)"
       - "  ens34 en OVS    : NO (correcto — solo Netplan)"
       - "  ens35 en OVS    : NO (correcto — solo Netplan)"
@@ -807,6 +805,5 @@
       - "  PENDIENTE (vecinos no configurados):"
       - "    - ping 10.255.21.2 (SWCORELIM2)"
       - "    - bond-pcsc1-sd1 activo (SWDISTLIM1)"
-      - "    - bond-pcsc1-sd2 activo (SWDISTLIM2)"
       - "==========================================================="
   tags: ovs

@@ -1,0 +1,55 @@
+---
+# =============================================================================
+# ROLE: swdistlim2 — defaults/main.yml
+# =============================================================================
+# Valores por defecto del rol. Sobreescritos por host_vars/swdistlim2.yml.
+# =============================================================================
+
+swdistlim2_hostname: "swdistlim2"
+backup_dir: "/root/backups/swdistlim2"
+netplan_config_dir:  "/etc/netplan"
+netplan_config_file: "/etc/netplan/99-swdistlim2-netplan.yaml"
+
+ovs_bridge_name: "br-dist"
+ovs_rstp_enabled: "true"   # Habilitado: Dist2 es raíz secundaria (priority 8192)
+# RSTP priority: 8192 = raíz secundaria (Dist1 priority=4096 tiene preferencia)
+
+ovs_script_path: "/usr/local/sbin/jhalex-swdistlim2-ovs.sh"
+ovs_service_name: "jhalex-swdistlim2-ovs"
+ovs_service_path: "/etc/systemd/system/jhalex-swdistlim2-ovs.service"
+
+dns_servers_local:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+required_interfaces:
+  - ens36
+  - ens37
+  - ens38
+  - ens39
+  - ens40
+  - ens41
+  - ens42
+  - ens43
+
+swdistlim2_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+swdistlim2_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd

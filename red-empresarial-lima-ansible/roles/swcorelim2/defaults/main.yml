@@ -36,8 +36,6 @@ required_interfaces:
   - ens35
   - ens36
   - ens37
-  - ens38
-  - ens39
   - ens40
   - ens41
 

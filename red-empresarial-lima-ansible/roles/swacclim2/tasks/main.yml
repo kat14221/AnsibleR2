@@ -1,0 +1,529 @@
+---
+# =============================================================================
+# ROLE: swacclim2 — tasks/main.yml
+# =============================================================================
+# Configura SWACCLIM2 como switch Acceso 2 de la sede Lima (JHALEX).
+#
+# Bloques:
+#   BLOQUE 0 — Diagnóstico previo y tabla de interfaces
+#   BLOQUE 1 — Hostname y /etc/hosts
+#   BLOQUE 2 — Zona horaria
+#   BLOQUE 3 — Instalación de paquetes
+#   BLOQUE 4 — Servicios requeridos (ssh, openvswitch-switch, lldpd)
+#   BLOQUE 5 — Backup y configuración Netplan (todas interfaces sin IP)
+#   BLOQUE 6 — Validar netplan generate antes de aplicar
+#   BLOQUE 7 — Aplicar netplan
+#   BLOQUE 8 — Desplegar script OVS idempotente
+#   BLOQUE 9 — Instalar y habilitar servicio systemd OVS
+#   BLOQUE 10 — Ejecutar script OVS y verificar resultado
+#
+# PROHIBICIONES activas (ver sección 12 del diseño):
+#   NO VLAN SVIs, OSPF, VRRP, LACP, DHCP, ACLs, MLAG
+# =============================================================================
+
+# =============================================================================
+# BLOQUE 0 — Diagnóstico previo
+# =============================================================================
+
+- name: "DIAG | Mostrar hostname y sistema detectado"
+  ansible.builtin.debug:
+    msg:
+      - "======================================================="
+      - "  SWACCLIM2 :: Iniciando configuración"
+      - "======================================================="
+      - "  Inventory host : {{ inventory_hostname }}"
+      - "  OS detectado   : {{ ansible_facts['distribution'] | default('N/A') }} {{ ansible_facts['distribution_version'] | default('') }}"
+      - "  Kernel         : {{ ansible_facts['kernel'] | default('N/A') }}"
+      - "  Fecha          : {{ ansible_facts['date_time']['iso8601'] | default('N/A') }}"
+      - "======================================================="
+  tags: always
+
+- name: "DIAG | Recopilar tabla de interfaces del sistema"
+  ansible.builtin.shell: |
+    echo "=== hostname ==="
+    hostname
+    echo ""
+    echo "=== ip -br link ==="
+    ip -br link
+    echo ""
+    echo "=== ip -br addr ==="
+    ip -br addr
+    echo ""
+    echo "=== ip link show (resumen) ==="
+    ip link show | grep -E '^[0-9]+:|state'
+  register: diag_interfaces
+  changed_when: false
+  tags: always
+
+- name: "DIAG | Mostrar tabla de interfaces actuales"
+  ansible.builtin.debug:
+    msg: "{{ diag_interfaces.stdout_lines }}"
+  tags: always
+
+- name: "DIAG | Verificar interfaces requeridas"
+  ansible.builtin.assert:
+    that:
+      - item in ansible_facts['interfaces']
+    fail_msg: >
+      ERROR CRÍTICO: La interfaz {{ item }} NO existe en este sistema.
+      Interfaces detectadas: {{ ansible_facts['interfaces'] | join(', ') }}.
+      Verificar el mapeo de Port Groups en VMware ESXi.
+      ABORTANDO para no perder conectividad.
+    success_msg: "OK: Interfaz {{ item }} detectada."
+  loop: "{{ required_interfaces | default(['ens34','ens35','ens36','ens37']) }}"
+  tags:
+    - always
+    - validate_interfaces
+
+# =============================================================================
+# BLOQUE 1 — Hostname
+# =============================================================================
+
+- name: "HOSTNAME | Configurar hostname del sistema"
+  ansible.builtin.hostname:
+    name: "{{ swacclim2_hostname | default('swacclim2') }}"
+    use: systemd
+  tags: hostname
+
+- name: "HOSTNAME | Actualizar /etc/hostname"
+  ansible.builtin.copy:
+    content: "{{ swacclim2_hostname | default('swacclim2') }}\n"
+    dest: /etc/hostname
+    owner: root
+    group: root
+    mode: "0644"
+  tags: hostname
+
+- name: "HOSTNAME | Actualizar /etc/hosts con hostname local"
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1\t{{ swacclim2_hostname | default('swacclim2') }}"
+    state: present
+    backup: true
+  tags: hostname
+
+- name: "HOSTNAME | Verificar hostname aplicado"
+  ansible.builtin.command: hostname
+  register: hostname_result
+  changed_when: false
+  tags: hostname
+
+- name: "HOSTNAME | Resultado"
+  ansible.builtin.debug:
+    msg: "Hostname actual: {{ hostname_result.stdout }}"
+  tags: hostname
+
+# =============================================================================
+# BLOQUE 2 — Zona horaria
+# =============================================================================
+
+- name: "TIMEZONE | Configurar zona horaria America/Lima"
+  community.general.timezone:
+    name: "{{ timezone | default('America/Lima') }}"
+  tags:
+    - timezone
+    - common
+
+# =============================================================================
+# BLOQUE 3 — Paquetes
+# =============================================================================
+
+- name: "PKG | Actualizar cache APT"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags: packages
+
+- name: "PKG | Instalar paquetes requeridos para SWACCLIM2"
+  ansible.builtin.apt:
+    name: "{{ swacclim2_packages | default(['openssh-server','openvswitch-switch','frr','frr-pythontools','keepalived','nftables','lldpd','tcpdump','traceroute','net-tools','curl','wget','vim','git','ansible']) }}"
+    state: present
+  tags: packages
+
+- name: "PKG | Verificar que openvswitch-switch fue instalado"
+  ansible.builtin.command: ovs-vsctl --version
+  register: ovs_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: packages
+
+- name: "PKG | Versión de OVS instalada"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        ovs_version.stdout_lines[0]
+        if (
+          ovs_version is defined and
+          ovs_version.stdout_lines is defined and
+          (ovs_version.stdout_lines | length) > 0
+        )
+        else 'OVS no disponible o sin salida en esta fase'
+      }}
+  tags: packages
+
+# =============================================================================
+# BLOQUE 4 — Servicios activos
+# =============================================================================
+
+- name: "SVC | Habilitar e iniciar servicios requeridos"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: "{{ swacclim2_active_services | default(['ssh','openvswitch-switch','lldpd']) }}"
+  tags: services
+
+- name: "SVC | Asegurar que FRR está instalado pero NO habilitado"
+  ansible.builtin.systemd:
+    name: frr
+    enabled: false
+    state: stopped
+  failed_when: false
+  tags: services
+
+- name: "SVC | Asegurar que Keepalived está instalado pero NO habilitado"
+  ansible.builtin.systemd:
+    name: keepalived
+    enabled: false
+    state: stopped
+  failed_when: false
+  tags: services
+
+- name: "SVC | Verificar estado de servicios activos"
+  ansible.builtin.command: "systemctl is-active {{ item }}"
+  register: svc_status
+  changed_when: false
+  failed_when: false
+  loop: "{{ swacclim2_active_services | default(['ssh','openvswitch-switch','lldpd']) }}"
+  tags: services
+
+- name: "SVC | Mostrar estado de servicios"
+  ansible.builtin.debug:
+    msg: "{{ item.item }}: {{ item.stdout }}"
+  loop: "{{ svc_status.results }}"
+  tags: services
+
+# =============================================================================
+# BLOQUE 5 — Backup y configuración Netplan
+# =============================================================================
+
+- name: "NETPLAN | Crear directorio de backups"
+  ansible.builtin.file:
+    path: "{{ backup_dir | default('/root/backups/swacclim2') }}/netplan"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Detectar archivos actuales en /etc/netplan/"
+  ansible.builtin.find:
+    paths: "{{ netplan_config_dir | default('/etc/netplan') }}"
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+    file_type: file
+  register: netplan_existing_files
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Mostrar archivos Netplan detectados"
+  ansible.builtin.debug:
+    msg: "Archivos Netplan encontrados: {{ netplan_existing_files.files | default([]) | map(attribute='path') | list }}"
+  tags: netplan
+
+- name: "NETPLAN | Crear backup con timestamp de cada archivo Netplan existente"
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ backup_dir | default('/root/backups/swacclim2') }}/netplan/{{ item.path | basename }}.bak.{{ ansible_date_time.iso8601_basic_short }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ netplan_existing_files.files | default([]) }}"
+  when:
+    - item.path is defined
+    - item.isreg | default(false)
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Informar sobre backups creados"
+  ansible.builtin.debug:
+    msg: "Backup creado para: {{ item.path }}"
+  loop: "{{ netplan_existing_files.files | default([]) }}"
+  when: (netplan_existing_files.files | default([]) | length) > 0
+  tags: netplan
+
+- name: "NETPLAN | Escribir configuración Netplan de SWACCLIM2"
+  ansible.builtin.copy:
+    content: "{{ swacclim2_netplan_content }}"
+    dest: "{{ netplan_config_file | default('/etc/netplan/99-swacclim2-netplan.yaml') }}"
+    owner: root
+    group: root
+    mode: "0600"
+  tags: netplan
+
+# =============================================================================
+# BLOQUE 6 — Validar contenido Netplan
+# =============================================================================
+
+- name: "NETPLAN | Leer contenido del archivo Netplan en disco"
+  ansible.builtin.shell: "cat {{ netplan_config_file | default('/etc/netplan/99-swacclim2-netplan.yaml') }} 2>/dev/null || echo 'ARCHIVO_NO_EXISTE'"
+  register: netplan_file_content
+  changed_when: false
+  check_mode: false
+  tags: netplan
+
+- name: "NETPLAN | Definir contenido Netplan a validar"
+  ansible.builtin.set_fact:
+    netplan_content_to_validate: >-
+      {{
+        swacclim2_netplan_content
+        if ansible_check_mode
+        else netplan_file_content.stdout
+      }}
+  tags: netplan
+
+- name: "NETPLAN | Mostrar fuente de validación Netplan"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'MODO CHECK: validando contenido esperado (swacclim2_netplan_content)'
+        if ansible_check_mode
+        else 'MODO REAL: validando archivo escrito'
+      }}
+  tags: netplan
+
+- name: "NETPLAN | Mostrar contenido a validar"
+  ansible.builtin.debug:
+    msg: "{{ netplan_content_to_validate.splitlines() }}"
+  tags: netplan
+
+- name: "NETPLAN | Verificar que no se usa 'gateway4'"
+  ansible.builtin.assert:
+    that:
+      - "'gateway4' not in netplan_content_to_validate"
+    fail_msg: >
+      ERROR: El contenido Netplan contiene 'gateway4', deprecado en Ubuntu 24.04.
+    success_msg: "OK: No se usa gateway4. Sintaxis correcta."
+  tags: netplan
+
+- name: "NETPLAN | Verificar que todas las interfaces están declaradas"
+  ansible.builtin.assert:
+    that:
+      - "'ens34:' in netplan_content_to_validate"
+      - "'ens35:' in netplan_content_to_validate"
+      - "'ens36:' in netplan_content_to_validate"
+      - "'ens37:' in netplan_content_to_validate"
+    fail_msg: >
+      ERROR: Una o más interfaces no aparecen en el contenido Netplan.
+    success_msg: "OK: Todas las interfaces están declaradas."
+  tags: netplan
+
+- name: "NETPLAN | Ejecutar 'netplan generate' para validar sintaxis"
+  ansible.builtin.command: netplan generate
+  register: netplan_generate_result
+  changed_when: false
+  failed_when: netplan_generate_result.rc != 0
+  when: not ansible_check_mode
+  tags: netplan
+
+- name: "NETPLAN | Confirmar que netplan generate fue exitoso"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'MODO CHECK: netplan generate omitido'
+        if ansible_check_mode
+        else 'netplan generate: RC=' + (netplan_generate_result.rc | string) + ' — Sintaxis válida'
+      }}
+  tags: netplan
+
+# =============================================================================
+# BLOQUE 7 — Aplicar Netplan
+# =============================================================================
+
+- name: "NETPLAN | Aplicar configuración Netplan"
+  ansible.builtin.command: netplan apply
+  register: netplan_apply_result
+  changed_when: true
+  tags: netplan
+
+- name: "NETPLAN | Esperar 3 segundos para estabilización de interfaces"
+  ansible.builtin.pause:
+    seconds: 3
+  tags: netplan
+
+- name: "NETPLAN | Verificar IPs asignadas post-apply"
+  ansible.builtin.shell: ip -br addr show
+  register: post_netplan_addr
+  changed_when: false
+  tags: netplan
+
+- name: "NETPLAN | Mostrar IPs actuales"
+  ansible.builtin.debug:
+    msg: "{{ post_netplan_addr.stdout_lines }}"
+  tags: netplan
+
+# =============================================================================
+# BLOQUE 8 — Desplegar script OVS idempotente
+# =============================================================================
+
+- name: "OVS-SCRIPT | Copiar script OVS a {{ ovs_script_path | default('/usr/local/sbin/jhalex-swacclim2-ovs.sh') }}"
+  ansible.builtin.copy:
+    src: "jhalex-swacclim2-ovs.sh"
+    dest: "{{ ovs_script_path | default('/usr/local/sbin/jhalex-swacclim2-ovs.sh') }}"
+    owner: root
+    group: root
+    mode: "0755"
+  tags: ovs
+
+# =============================================================================
+# BLOQUE 9 — Servicio systemd para OVS
+# =============================================================================
+
+- name: "OVS-SVC | Crear unidad systemd {{ ovs_service_name | default('jhalex-swacclim2-ovs') }}"
+  ansible.builtin.template:
+    src: "jhalex-swacclim2-ovs.service.j2"
+    dest: "{{ ovs_service_path | default('/etc/systemd/system/jhalex-swacclim2-ovs.service') }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "reload systemd"
+  tags: ovs
+
+- name: "OVS-SVC | Recargar systemd daemon"
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Habilitar servicio OVS en el arranque"
+  ansible.builtin.systemd:
+    name: "{{ ovs_service_name | default('jhalex-swacclim2-ovs') }}"
+    enabled: true
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-SVC | Iniciar servicio OVS"
+  ansible.builtin.systemd:
+    name: "{{ ovs_service_name | default('jhalex-swacclim2-ovs') }}"
+    state: restarted
+  when: not ansible_check_mode
+  tags: ovs
+
+# =============================================================================
+# BLOQUE 10 — Validaciones post-OVS
+# =============================================================================
+
+- name: "OVS-VAL | Verificar que br-acc existe"
+  ansible.builtin.command: ovs-vsctl br-exists br-acc
+  register: val_br_acc
+  changed_when: false
+  failed_when: val_br_acc.rc != 0
+  tags: ovs
+
+- name: "OVS-VAL | Obtener puertos de br-acc"
+  ansible.builtin.command: ovs-vsctl list-ports br-acc
+  register: val_ovs_ports
+  changed_when: false
+  tags: ovs
+
+- name: "OVS-VAL | Mostrar puertos de br-acc"
+  ansible.builtin.debug:
+    msg: "Puertos en br-acc: {{ val_ovs_ports.stdout_lines }}"
+  tags: ovs
+
+- name: "OVS-VAL | Verificar rstp_enable=true en br-acc"
+  ansible.builtin.command: ovs-vsctl get bridge br-acc rstp_enable
+  register: val_br_acc_rstp
+  changed_when: false
+  failed_when: false
+  tags: ovs
+
+- name: "OVS-VAL | Evaluar rstp_enable=true en br-acc"
+  ansible.builtin.assert:
+    that:
+      - "val_br_acc_rstp.stdout == 'true'"
+    fail_msg: >
+      ERROR: br-acc NO tiene rstp_enable=true. Valor actual: {{ val_br_acc_rstp.stdout }}
+      La capa de Acceso debe tener RSTP activo y nunca ser root bridge.
+    success_msg: "PASS: br-acc tiene rstp_enable=true (control de bucles L2 — nunca root)."
+  tags: ovs
+
+- name: "OVS-VAL | Verificar bond-pcsd1-sa2 (Acc → SWDISTLIM1)"
+  ansible.builtin.assert:
+    that:
+      - "'bond-pcsd1-sa2' in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: bond-pcsd1-sa2 NO existe en br-acc.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: bond-pcsd1-sa2 presente en br-acc."
+  tags: ovs
+
+- name: "OVS-VAL | Verificar bond-pcsd2-sa2 (Acc → SWDISTLIM2)"
+  ansible.builtin.assert:
+    that:
+      - "'bond-pcsd2-sa2' in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: bond-pcsd2-sa2 NO existe en br-acc.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: bond-pcsd2-sa2 presente en br-acc."
+  tags: ovs
+
+- name: "OVS-VAL | Verificar que NO existe int-core-test"
+  ansible.builtin.assert:
+    that:
+      - "'int-core-test' not in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: int-core-test todavía existe en br-acc.
+    success_msg: "PASS: int-core-test NO está presente."
+  tags: ovs
+
+- name: "OVS-VAL | Obtener estado de bonds OVS"
+  ansible.builtin.command: ovs-appctl bond/show
+  register: val_bonds_final
+  changed_when: false
+  failed_when: false
+  tags: ovs
+
+- name: "OVS-VAL | Mostrar estado de bonds"
+  ansible.builtin.debug:
+    msg: "{{ val_bonds_final.stdout_lines }}"
+  tags: ovs
+
+- name: "OVS-VAL | Recopilar estado completo de red post-OVS"
+  ansible.builtin.shell: |
+    echo "=== ovs-vsctl show ==="
+    ovs-vsctl show
+    echo ""
+    echo "=== ip -br addr ==="
+    ip -br addr
+    echo ""
+    echo "=== ip route ==="
+    ip route
+  register: val_estado_final
+  changed_when: false
+  tags: ovs
+
+- name: "OVS-VAL | Mostrar estado final de red"
+  ansible.builtin.debug:
+    msg: "{{ val_estado_final.stdout_lines }}"
+  tags: ovs
+
+- name: "OVS-VAL | Resumen de validaciones post-OVS"
+  ansible.builtin.debug:
+    msg:
+      - "==========================================================="
+      - "  SWACCLIM2 — Resultado de validaciones post-OVS"
+      - "==========================================================="
+      - "  br-acc         : EXISTE"
+      - "  RSTP           : true (priority 28672 — nunca root bridge)"
+      - "  bond-pcsd1-sa2 : EXISTE (ens34+ens35 | active-backup | trunk L2)"
+      - "  bond-pcsd2-sa2 : EXISTE (ens36+ens37 | active-backup | trunk L2)"
+      - "  int-core-test  : NO EXISTE"
+      - "  NOTA: VMs acceso (ens38+) NO configuradas en esta fase"
+      - "==========================================================="
+  tags: ovs

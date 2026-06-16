@@ -1,0 +1,15 @@
+---
+# =============================================================================
+# ROLE: swacclim1 — handlers/main.yml
+# =============================================================================
+
+- name: "reload systemd"
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: "reload systemd"
+
+- name: "restart ssh"
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+  listen: "restart ssh"

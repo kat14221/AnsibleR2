@@ -38,7 +38,7 @@
     msg: "{{ diag_interfaces.stdout_lines }}"
   tags: always
 
-- name: "DIAG | Verificar interfaces requeridas (ens34..ens41)"
+- name: "DIAG | Verificar interfaces requeridas"
   ansible.builtin.assert:
     that:
       - item in ansible_facts['interfaces']
@@ -47,7 +47,7 @@
       Interfaces detectadas: {{ ansible_facts['interfaces'] | join(', ') }}.
       Verificar el mapeo de Port Groups en VMware ESXi.
     success_msg: "OK: Interfaz {{ item }} detectada."
-  loop: "{{ required_interfaces | default(['ens34','ens35','ens36','ens37','ens38','ens39','ens40','ens41']) }}"
+  loop: "{{ required_interfaces | default(['ens34','ens35','ens36','ens37','ens40','ens41']) }}"
   tags:
     - always
     - validate_interfaces
@@ -297,18 +297,16 @@
     success_msg: "OK: Gateway 10.10.254.5 (ruta default) presente en Netplan."
   tags: netplan
 
-- name: "NETPLAN | Verificar que ens36..ens41 están declaradas individualmente"
+- name: "NETPLAN | Verificar que ens36, ens37, ens40, ens41 están declaradas individualmente"
   ansible.builtin.assert:
     that:
       - "'ens36:' in netplan_content_to_validate"
       - "'ens37:' in netplan_content_to_validate"
-      - "'ens38:' in netplan_content_to_validate"
-      - "'ens39:' in netplan_content_to_validate"
       - "'ens40:' in netplan_content_to_validate"
       - "'ens41:' in netplan_content_to_validate"
     fail_msg: >
-      ERROR: Una o más de ens36..ens41 no aparecen en el contenido Netplan.
-    success_msg: "OK: ens36, ens37, ens38, ens39, ens40, ens41 declaradas individualmente."
+      ERROR: Una o más de ens36, ens37, ens40, ens41 no aparecen en el contenido Netplan.
+    success_msg: "OK: ens36, ens37, ens40, ens41 declaradas individualmente."
   tags: netplan
 
 - name: "NETPLAN | Ejecutar 'netplan generate' para validar sintaxis (solo modo real)"
@@ -549,17 +547,6 @@
   when: not ansible_check_mode
   tags: ovs
 
-- name: "OVS-VAL | Verificar bond-pcsc2-sd1"
-  ansible.builtin.assert:
-    that:
-      - "'bond-pcsc2-sd1' in val_ovs_ports.stdout"
-    fail_msg: >
-      ERROR: bond-pcsc2-sd1 NO existe en br-core.
-      Puertos actuales: {{ val_ovs_ports.stdout }}
-    success_msg: "PASS: bond-pcsc2-sd1 presente en br-core."
-  when: not ansible_check_mode
-  tags: ovs
-
 - name: "OVS-VAL | Verificar bond-pcsc2-sd2"
   ansible.builtin.assert:
     that:
@@ -568,6 +555,17 @@
       ERROR: bond-pcsc2-sd2 NO existe en br-core.
       Puertos actuales: {{ val_ovs_ports.stdout }}
     success_msg: "PASS: bond-pcsc2-sd2 presente en br-core."
+  when: not ansible_check_mode
+  tags: ovs
+
+- name: "OVS-VAL | Verificar que NO existe bond-pcsc2-sd1"
+  ansible.builtin.assert:
+    that:
+      - "'bond-pcsc2-sd1' not in val_ovs_ports.stdout"
+    fail_msg: >
+      ERROR: bond-pcsc2-sd1 todavía existe en br-core.
+      Puertos actuales: {{ val_ovs_ports.stdout }}
+    success_msg: "PASS: bond-pcsc2-sd1 NO está presente (correcto)."
   when: not ansible_check_mode
   tags: ovs
 

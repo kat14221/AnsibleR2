@@ -40,8 +40,6 @@ required_interfaces:
   - ens37
   - ens38
   - ens39
-  - ens40
-  - ens41
 
 swcorelim1_packages:
   - openssh-server

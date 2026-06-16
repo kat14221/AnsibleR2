@@ -1,33 +1,33 @@
 ---
 # =============================================================================
-# PLAYBOOK: 02_configurar_swcorelim1.yml
+# PLAYBOOK: 02_configurar_swdistlim2.yml
 # =============================================================================
-# Propósito: Configuración completa y segura de SWCORELIM1 como switch Core
-#            principal de la sede Lima (proyecto JHALEX).
+# Propósito: Configuración completa y segura de SWDISTLIM2 como switch Distribución 2
+#            de la sede Lima (proyecto JHALEX).
 #
-# Ejecutar desde SWCORELIM1 (local) o desde controller externo con SSH:
+# Ejecutar desde SWDISTLIM2 (local) o desde controller externo con SSH:
 #
-#   [Local — ejecutar en SWCORELIM1 directamente]
+#   [Local — ejecutar en SWDISTLIM2 directamente]
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/02_configurar_swcorelim1.yml -e @host_vars/swcorelim1.yml -vv -K
+#     playbooks/02_configurar_swdistlim2.yml --ask-become-pass
 #
 #   [Dry-run — sin cambios]
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/02_configurar_swcorelim1.yml -e @host_vars/swcorelim1.yml -vv -K --check --diff
+#     playbooks/02_configurar_swdistlim2.yml --check --diff --ask-become-pass
 #
 #   [Solo Netplan]
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/02_configurar_swcorelim1.yml -e @host_vars/swcorelim1.yml -vv -K --tags netplan
+#     playbooks/02_configurar_swdistlim2.yml --tags netplan --ask-become-pass
 #
 #   [Solo OVS]
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/02_configurar_swcorelim1.yml -e @host_vars/swcorelim1.yml -vv -K --tags ovs
+#     playbooks/02_configurar_swdistlim2.yml --tags ovs --ask-become-pass
 #
 # Requiere: ansible-galaxy collection install -r requirements.yml
 #
 # Tags disponibles:
 #   always              — siempre se ejecuta (validaciones, diagnóstico)
-#   validate_interfaces — verificación de ens34..ens41
+#   validate_interfaces — verificación de ens36..ens43
 #   hostname            — configurar hostname
 #   timezone            — zona horaria
 #   packages            — instalar paquetes
@@ -36,21 +36,21 @@
 #   ovs                 — desplegar script y servicio OVS
 # =============================================================================
 
-- name: "SWCORELIM1 :: Configuración Core Switch Principal — Sede Lima (JHALEX)"
-  hosts: swcorelim1
+- name: "SWDISTLIM2 :: Configuración Distribución Switch 2 — Sede Lima (JHALEX)"
+  hosts: swdistlim2
   gather_facts: true
   become: true
 
   pre_tasks:
     # -------------------------------------------------------------------------
-    # PRE-0: Verificar que el host es exactamente SWCORELIM1
+    # PRE-0: Verificar que el host es exactamente SWDISTLIM2
     # -------------------------------------------------------------------------
-    - name: "PRE | Verificar que el host de destino es swcorelim1"
+    - name: "PRE | Verificar que el host de destino es swdistlim2"
       ansible.builtin.assert:
         that:
-          - inventory_hostname == "swcorelim1"
+          - inventory_hostname == "swdistlim2"
         fail_msg: >
-          ERROR: Este playbook solo debe ejecutarse en swcorelim1.
+          ERROR: Este playbook solo debe ejecutarse en swdistlim2.
           Host actual: {{ inventory_hostname }}.
           Abortar para evitar configurar el dispositivo equivocado.
         success_msg: "OK: Ejecutando en el host correcto: {{ inventory_hostname }}"
@@ -62,20 +62,14 @@
     - name: "PRE | Validar variables críticas de red"
       ansible.builtin.assert:
         that:
-          - swcorelim1_hostname is defined and swcorelim1_hostname | length > 0
-          - ens34_ip            is defined and ens34_ip            | length > 0
-          - ens34_cidr          is defined and ens34_cidr          | length > 0
-          - ens34_gateway       is defined and ens34_gateway       | length > 0
-          - ens35_ip            is defined and ens35_ip            | length > 0
-          - ens35_cidr          is defined and ens35_cidr          | length > 0
+          - swdistlim2_hostname is defined and swdistlim2_hostname | length > 0
           - ovs_bridge_name     is defined and ovs_bridge_name     | length > 0
           - ovs_script_path     is defined and ovs_script_path     | length > 0
           - ovs_service_name    is defined and ovs_service_name    | length > 0
         fail_msg: >
           ERROR CRÍTICO: Variables de red obligatorias no definidas.
-          Revisa host_vars/swcorelim1.yml.
-          Variables necesarias: swcorelim1_hostname, ens34_ip, ens34_cidr,
-          ens34_gateway, ens35_ip, ens35_cidr, ovs_bridge_name,
+          Revisa host_vars/swdistlim2.yml.
+          Variables necesarias: swdistlim2_hostname, ovs_bridge_name,
           ovs_script_path, ovs_service_name.
         success_msg: "OK: Todas las variables críticas están definidas."
       tags: always
@@ -87,17 +81,16 @@
       ansible.builtin.debug:
         msg:
           - "========================================================="
-          - "  SWCORELIM1 — Configuración Core Switch Lima (JHALEX)"
+          - "  SWDISTLIM2 — Configuración Distribución Switch 2 Lima (JHALEX)"
           - "========================================================="
-          - "  Hostname      : {{ swcorelim1_hostname }}"
+          - "  Hostname      : {{ swdistlim2_hostname }}"
           - "  OS            : {{ ansible_facts['distribution'] | default('N/A') }} {{ ansible_facts['distribution_version'] | default('') }}"
-          - "  ens34 IP      : {{ ens34_cidr }} — Gateway: {{ ens34_gateway }}"
-          - "  ens35 IP      : {{ ens35_cidr }} — Solo IP, sin gateway"
           - "  DNS           : {{ dns_servers_local | default(['8.8.8.8','1.1.1.1']) | join(', ') }}"
-          - "  OVS Bridge    : {{ ovs_bridge_name }} (RSTP={{ ovs_rstp_enabled }}) → {{ ovs_bridge_cidr }}"
-          - "  Bond C-C      : {{ bond_core_core_name | default('bond-pcsc1-sc2') }} (ens36+ens37, active-backup, sin trunks)"
-          - "  Bond C-D1     : {{ bond_core_dist1_name | default('bond-pcsc1-sd1') }} (ens38+ens39, active-backup, trunk)"
-          - "  ELIMINADO     : bond-pcsc1-sd2 (nueva topología — SC1 no conecta a SWDISTLIM2)"
+          - "  OVS Bridge    : {{ ovs_bridge_name }} (RSTP={{ ovs_rstp_enabled }} — raíz secundaria)"
+          - "  Bond D2-C2    : bond-pcsc2-sd2 (ens36+ens37, active-backup, trunk)"
+          - "  Bond D2-D1    : bond-pcsd1-sd2 (ens38+ens39, active-backup, trunk)"
+          - "  Bond D2-A1    : bond-pcsa1-sd2 (ens40+ens41, active-backup, trunk)"
+          - "  Bond D2-A2    : bond-pcsd2-sa2 (ens42+ens43, active-backup, trunk)"
           - "========================================================="
           - "  PROHIBIDO en esta ejecución:"
           - "    VLAN SVIs, VRRP, OSPF, BGP, LACP, DHCP, ACLs, MLAG"
@@ -107,9 +100,9 @@
     # -------------------------------------------------------------------------
     # PRE-3: Crear directorios de backups y logs
     # -------------------------------------------------------------------------
-    - name: "PRE | Crear directorio de backups de SWCORELIM1"
+    - name: "PRE | Crear directorio de backups de SWDISTLIM2"
       ansible.builtin.file:
-        path: "{{ backup_dir | default('/root/backups/swcorelim1') }}"
+        path: "{{ backup_dir | default('/root/backups/swdistlim2') }}"
         state: directory
         owner: root
         group: root
@@ -118,7 +111,7 @@
 
     - name: "PRE | Crear subdirectorio de logs"
       ansible.builtin.file:
-        path: "{{ backup_dir | default('/root/backups/swcorelim1') }}/logs"
+        path: "{{ backup_dir | default('/root/backups/swdistlim2') }}/logs"
         state: directory
         owner: root
         group: root
@@ -131,7 +124,7 @@
     # -------------------------------------------------------------------------
     - role: linux_common
       vars:
-        rlimengano_hostname: "{{ swcorelim1_hostname }}"   # reutilizar el rol común
+        rlimengano_hostname: "{{ swdistlim2_hostname }}"   # reutilizar el rol común
       tags:
         - common
         - hostname
@@ -139,12 +132,12 @@
         - packages
 
     # -------------------------------------------------------------------------
-    # Rol 2: Configuración completa de SWCORELIM1
+    # Rol 2: Configuración completa de SWDISTLIM2
     # (paquetes específicos, netplan, OVS, servicios, validaciones)
     # -------------------------------------------------------------------------
-    - role: swcorelim1
+    - role: swdistlim2
       tags:
-        - swcorelim1
+        - swdistlim2
         - netplan
         - ovs
         - services
@@ -200,25 +193,17 @@
       ansible.builtin.debug:
         msg:
           - "========================================================="
-          - "  SWCORELIM1 :: Configuración completada"
+          - "  SWDISTLIM2 :: Configuración completada"
           - "========================================================="
           - "  Para validar detalladamente ejecutar:"
           - "  ansible-playbook -i inventories/local/hosts.yml \\"
-          - "    playbooks/99_validar_swcorelim1.yml -e @host_vars/swcorelim1.yml -vv -K"
+          - "    playbooks/99_validar_swdistlim2.yml -e @host_vars/swdistlim2.yml -vv -K"
           - ""
           - "  PRUEBAS OK (esperadas):"
-          - "    [ ] ens34 → 10.10.254.2/30"
-          - "    [ ] ens35 → 10.10.254.10/30"
-          - "    [ ] Ruta default → 10.10.254.1"
-          - "    [ ] ping 10.10.254.1 (RLIM1)"
-          - "    [ ] Bridge br-core (RSTP=false en Core)"
-          - "    [ ] bond-pcsc1-sc2 (ens36+ens37, sin trunks)"
-          - "    [ ] bond-pcsc1-sd1 (ens38+ens39, trunk VLANs)"
-          - "    [ ] bond-pcsc1-sd2 NO EXISTE (correcto)"
-          - "    [ ] br-core → 10.255.21.1/30"
-          - ""
-          - "  PRUEBAS PENDIENTES (requieren vecinos):"
-          - "    [ ] ping 10.255.21.2 → requiere SWCORELIM2"
-          - "    [ ] bond-pcsc1-sd1 activo → requiere SWDISTLIM1"
-          - "=========================================================="
+          - "    [ ] br-dist existe"
+          - "    [ ] bond-pcsc2-sd2 (ens36+ens37, trunk)"
+          - "    [ ] bond-pcsd1-sd2 (ens38+ens39, trunk)"
+          - "    [ ] bond-pcsa1-sd2 (ens40+ens41, trunk)"
+          - "    [ ] bond-pcsd2-sa2 (ens42+ens43, trunk)"
+          - "========================================================="
       tags: always

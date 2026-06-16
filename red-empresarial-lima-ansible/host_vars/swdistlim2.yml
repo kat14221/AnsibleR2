@@ -1,0 +1,113 @@
+# =============================================================================
+# HOST_VARS/SWDISTLIM2.YML - Variables Específicas de SWDISTLIM2
+# =============================================================================
+# VM función  : Switch Distribución Secundario de la Sede Lima (JHALEX)
+# Plataforma  : VMware ESXi
+# SO          : Ubuntu Server 24.04 LTS
+# Tecnología  : Open vSwitch (active-backup, RSTP habilitado en br-dist)
+# Rol         : Distribución L2 — no enruta dinámicamente todavía
+#
+# PROHIBIDO configurar: VLAN SVIs, VRRP, OSPF, BGP, LACP, DHCP, MLAG
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# Identidad del dispositivo
+# -----------------------------------------------------------------------------
+
+swdistlim2_hostname: "swdistlim2"
+backup_dir: "/root/backups/swdistlim2"
+
+# -----------------------------------------------------------------------------
+# Directorio de backups específico de SWDISTLIM2
+# -----------------------------------------------------------------------------
+
+netplan_config_dir:  "/etc/netplan"
+netplan_config_file: "/etc/netplan/99-swdistlim2-netplan.yaml"
+
+# -----------------------------------------------------------------------------
+# Contenido canónico del archivo Netplan de SWDISTLIM2
+# Todas las interfaces son miembros OVS sin IP, excepto una de gestión (si aplica)
+# -----------------------------------------------------------------------------
+swdistlim2_netplan_content: |
+  # =============================================================================
+  # /etc/netplan/99-swdistlim2-netplan.yaml
+  # Configuración de red - SWDISTLIM2 (JHALEX - Sede Lima)
+  # Generado por Ansible - No editar manualmente
+  # =============================================================================
+  network:
+    version: 2
+    ethernets:
+      # Miembros OVS - sin IP
+      ens36:
+        dhcp4: false
+      ens37:
+        dhcp4: false
+      ens38:
+        dhcp4: false
+      ens39:
+        dhcp4: false
+      ens40:
+        dhcp4: false
+      ens41:
+        dhcp4: false
+      ens42:
+        dhcp4: false
+      ens43:
+        dhcp4: false
+
+# -----------------------------------------------------------------------------
+# Interfaces físicas validadas (mapeo ESXi → Linux)
+# NO inventar nombres. Usar EXACTAMENTE estos.
+# -----------------------------------------------------------------------------
+required_interfaces:
+  - ens36
+  - ens37
+  - ens38
+  - ens39
+  - ens40
+  - ens41
+  - ens42
+  - ens43
+
+# -----------------------------------------------------------------------------
+# Bridge OVS principal
+# -----------------------------------------------------------------------------
+ovs_bridge_name: "br-dist"
+ovs_rstp_enabled: "true"   # Habilitado: Dist2 es raíz secundaria (priority 8192)
+# RSTP priority: 8192 = raíz secundaria (Dist1 priority=4096 tiene preferencia)
+
+# -----------------------------------------------------------------------------
+# Script OVS idempotente y servicio systemd
+# -----------------------------------------------------------------------------
+ovs_script_path: "/usr/local/sbin/jhalex-swdistlim2-ovs.sh"
+ovs_service_name: "jhalex-swdistlim2-ovs"
+ovs_service_path: "/etc/systemd/system/jhalex-swdistlim2-ovs.service"
+
+# -----------------------------------------------------------------------------
+# Paquetes requeridos para SWDISTLIM2
+# -----------------------------------------------------------------------------
+swdistlim2_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+# -----------------------------------------------------------------------------
+# Servicios que deben estar activos
+# -----------------------------------------------------------------------------
+swdistlim2_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd

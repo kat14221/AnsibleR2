@@ -1,0 +1,56 @@
+---
+# =============================================================================
+# ROLE: swdistlim1 — defaults/main.yml
+# =============================================================================
+# Valores por defecto del rol. Sobreescritos por host_vars/swdistlim1.yml.
+# =============================================================================
+
+swdistlim1_hostname: "swdistlim1"
+backup_dir: "/root/backups/swdistlim1"
+netplan_config_dir:  "/etc/netplan"
+netplan_config_file: "/etc/netplan/99-swdistlim1-netplan.yaml"
+
+ovs_bridge_name:     "br-dist"
+ovs_rstp_enabled:    "true"   # Habilitado: Dist1 es raíz preferida (priority 4096)
+# RSTP priority: 4096 = raíz preferida en topología Distribución-Acceso
+# RSTP controla bucles en: Dist1↔Dist2, Dist1↔Acc1, Dist1↔Acc2
+
+ovs_script_path:   "/usr/local/sbin/jhalex-swdistlim1-ovs.sh"
+ovs_service_name:  "jhalex-swdistlim1-ovs"
+ovs_service_path:  "/etc/systemd/system/jhalex-swdistlim1-ovs.service"
+
+dns_servers_local:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+required_interfaces:
+  - ens34
+  - ens37
+  - ens40
+  - ens41
+  - ens42
+  - ens43
+  - ens44
+  - ens45
+
+swdistlim1_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+swdistlim1_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd

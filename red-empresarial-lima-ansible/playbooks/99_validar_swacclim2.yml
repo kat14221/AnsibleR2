@@ -1,0 +1,284 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_swacclim2.yml
+# =============================================================================
+# Propósito: Validación completa del estado de SWACCLIM2.
+#            No realiza cambios. Solo verifica y muestra resultados.
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_swacclim2.yml -e @host_vars/swacclim2.yml -vv -K
+# =============================================================================
+
+- name: "SWACCLIM2 :: Validación completa — Solo lectura, sin cambios"
+  hosts: swacclim2
+  gather_facts: true
+  become: true
+
+  tasks:
+    # =========================================================================
+    # SECCIÓN 1 — Banner inicial
+    # =========================================================================
+    - name: "VAL | Banner de inicio"
+      ansible.builtin.debug:
+        msg:
+          - "========================================================="
+          - "  SWACCLIM2 :: Validación completa del sistema"
+          - "  Fecha: {{ ansible_facts['date_time']['iso8601'] | default('N/A') }}"
+          - "========================================================="
+          - "  MODO: Solo lectura. No se realizarán cambios."
+          - "========================================================="
+
+    # =========================================================================
+    # SECCIÓN 2 — Hostname
+    # =========================================================================
+    - name: "VAL-HOSTNAME | Obtener hostname actual"
+      ansible.builtin.command: hostname
+      register: val_hostname
+      changed_when: false
+
+    - name: "VAL-HOSTNAME | Verificar hostname es 'swacclim2'"
+      ansible.builtin.assert:
+        that:
+          - val_hostname.stdout | lower == "swacclim2"
+        fail_msg: "FAIL: Hostname es '{{ val_hostname.stdout }}', esperado 'swacclim2'"
+        success_msg: "PASS: Hostname = {{ val_hostname.stdout }}"
+      ignore_errors: true
+
+    # =========================================================================
+    # SECCIÓN 3 — Servicios críticos
+    # =========================================================================
+    - name: "VAL-SVC | Verificar estado de ssh"
+      ansible.builtin.command: systemctl is-active ssh
+      register: val_svc_ssh
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar ssh"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ssh.stdout == "active"
+        fail_msg: "FAIL: ssh no está activo. Estado: {{ val_svc_ssh.stdout }}"
+        success_msg: "PASS: ssh activo."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Verificar estado de openvswitch-switch"
+      ansible.builtin.command: systemctl is-active openvswitch-switch
+      register: val_svc_ovs
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar openvswitch-switch"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ovs.stdout == "active"
+        fail_msg: "FAIL: openvswitch-switch no está activo. Estado: {{ val_svc_ovs.stdout }}"
+        success_msg: "PASS: openvswitch-switch activo."
+      ignore_errors: true
+
+    - name: "VAL-SVC | Verificar servicio jhalex-swacclim2-ovs habilitado"
+      ansible.builtin.command: systemctl is-enabled jhalex-swacclim2-ovs
+      register: val_svc_ovs_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Verificar estado active/exited de jhalex-swacclim2-ovs"
+      ansible.builtin.command: systemctl is-active jhalex-swacclim2-ovs
+      register: val_svc_ovs_state
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-SVC | Evaluar jhalex-swacclim2-ovs"
+      ansible.builtin.assert:
+        that:
+          - val_svc_ovs_enabled.stdout == "enabled"
+          - val_svc_ovs_state.stdout in ["active", "exited"]
+        fail_msg: >
+          FAIL: jhalex-swacclim2-ovs no está correctamente habilitado/activo.
+          enabled={{ val_svc_ovs_enabled.stdout }}
+          state={{ val_svc_ovs_state.stdout }}
+        success_msg: "PASS: jhalex-swacclim2-ovs habilitado y active/exited."
+      ignore_errors: true
+
+    # =========================================================================
+    # SECCIÓN 4 — Open vSwitch: Bridge
+    # =========================================================================
+    - name: "VAL-OVS | Verificar que br-acc existe"
+      ansible.builtin.command: ovs-vsctl br-exists br-acc
+      register: val_br_acc
+      changed_when: false
+      failed_when: val_br_acc.rc != 0
+
+    - name: "VAL-OVS | Obtener puertos de br-acc"
+      ansible.builtin.command: ovs-vsctl list-ports br-acc
+      register: val_ovs_ports
+      changed_when: false
+
+    - name: "VAL-OVS | Mostrar puertos de br-acc"
+      ansible.builtin.debug:
+        msg: "Puertos en br-acc: {{ val_ovs_ports.stdout_lines }}"
+      tags: ovs
+
+    - name: "VAL-OVS | Verificar rstp_enable=true en br-acc"
+      ansible.builtin.command: ovs-vsctl get bridge br-acc rstp_enable
+      register: val_br_acc_rstp
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar rstp_enable=true en br-acc"
+      ansible.builtin.assert:
+        that:
+          - "val_br_acc_rstp.stdout == 'true'"
+        fail_msg: >
+          ERROR: RSTP no está activo en br-acc. Valor actual: {{ val_br_acc_rstp.stdout }}
+          No se debe continuar con enlaces redundantes Distribución–Acceso porque existe riesgo de bucle L2.
+        success_msg: "PASS: br-acc tiene rstp_enable=true (control de bucles L2 — nunca root)."
+      tags: ovs
+
+    # =========================================================================
+    # SECCIÓN 5 — Bonds OVS: existencia
+    # =========================================================================
+    - name: "VAL-OVS | Verificar bond-pcsd1-sa2 (Acc → SWDISTLIM1)"
+      ansible.builtin.assert:
+        that:
+          - "'bond-pcsd1-sa2' in val_ovs_ports.stdout"
+        fail_msg: >
+          ERROR: bond-pcsd1-sa2 NO existe en br-acc.
+          Puertos actuales: {{ val_ovs_ports.stdout }}
+        success_msg: "PASS: bond-pcsd1-sa2 presente en br-acc."
+      tags: ovs
+
+    - name: "VAL-OVS | Verificar bond-pcsd2-sa2 (Acc → SWDISTLIM2)"
+      ansible.builtin.assert:
+        that:
+          - "'bond-pcsd2-sa2' in val_ovs_ports.stdout"
+        fail_msg: >
+          ERROR: bond-pcsd2-sa2 NO existe en br-acc.
+          Puertos actuales: {{ val_ovs_ports.stdout }}
+        success_msg: "PASS: bond-pcsd2-sa2 presente en br-acc."
+      tags: ovs
+
+    - name: "VAL-OVS | Verificar que NO existe int-core-test"
+      ansible.builtin.assert:
+        that:
+          - "'int-core-test' not in val_ovs_ports.stdout"
+        fail_msg: >
+          ERROR: int-core-test todavía existe en br-acc.
+        success_msg: "PASS: int-core-test NO está presente."
+      tags: ovs
+
+    # =========================================================================
+    # SECCIÓN 6 — Bonds OVS: modo y configuración
+    # =========================================================================
+    - name: "VAL-OVS | Verificar bond-pcsd1-sa2 active-backup"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsd1-sa2 bond_mode
+      register: val_bond_pcsd1_sa2_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar bond-pcsd1-sa2 primary=ens34"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsd1-sa2 other_config
+      register: val_bond_pcsd1_sa2_cfg
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar bond-pcsd1-sa2"
+      ansible.builtin.assert:
+        that:
+          - "'active-backup' in val_bond_pcsd1_sa2_mode.stdout"
+          - "'bond-primary=\"ens34\"' in val_bond_pcsd1_sa2_cfg.stdout or 'bond-primary=ens34' in val_bond_pcsd1_sa2_cfg.stdout"
+        fail_msg: >
+          FAIL: bond-pcsd1-sa2 incorrecto.
+          bond_mode={{ val_bond_pcsd1_sa2_mode.stdout }}
+          primary={{ val_bond_pcsd1_sa2_cfg.stdout }}
+        success_msg: "PASS: bond-pcsd1-sa2 correctamente configurado (active-backup, ens34 primary)."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar bond-pcsd2-sa2 active-backup y trunks"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsd2-sa2 bond_mode
+      register: val_bond_pcsd2_sa2_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar bond-pcsd2-sa2 primary=ens36"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsd2-sa2 other_config
+      register: val_bond_pcsd2_sa2_cfg
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar bond-pcsd2-sa2"
+      ansible.builtin.assert:
+        that:
+          - "'active-backup' in val_bond_pcsd2_sa2_mode.stdout"
+          - "'bond-primary=\"ens36\"' in val_bond_pcsd2_sa2_cfg.stdout or 'bond-primary=ens36' in val_bond_pcsd2_sa2_cfg.stdout"
+        fail_msg: >
+          FAIL: bond-pcsd2-sa2 incorrecto.
+          bond_mode={{ val_bond_pcsd2_sa2_mode.stdout }}
+          primary={{ val_bond_pcsd2_sa2_cfg.stdout }}
+        success_msg: "PASS: bond-pcsd2-sa2 correctamente configurado (active-backup, ens36 primary)."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Mostrar estado de bonds"
+      ansible.builtin.command: ovs-appctl bond/show
+      register: val_ovs_bonds
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Estado de bonds OVS"
+      ansible.builtin.debug:
+        msg: "{{ val_ovs_bonds.stdout_lines }}"
+      tags: ovs
+
+    # =========================================================================
+    # SECCIÓN 7 — Resumen final
+    # =========================================================================
+    - name: "VAL | Recopilar resumen final completo"
+      ansible.builtin.shell: |
+        echo "========================================"
+        echo "HOSTNAME"
+        hostname
+        echo ""
+        echo "========================================"
+        echo "INTERFACES"
+        ip -br addr
+        echo ""
+        echo "========================================"
+        echo "SERVICIOS"
+        printf "%-35s %s\n" "ssh:" "$(systemctl is-active ssh)"
+        printf "%-35s %s\n" "openvswitch-switch:" "$(systemctl is-active openvswitch-switch)"
+        printf "%-35s %s\n" "lldpd:" "$(systemctl is-active lldpd)"
+        printf "%-35s %s\n" "jhalex-swacclim2-ovs:" "$(systemctl is-active jhalex-swacclim2-ovs 2>/dev/null || echo desconocido)"
+        echo ""
+        echo "========================================"
+        echo "OVS"
+        ovs-vsctl show 2>/dev/null || echo "OVS no disponible"
+        echo ""
+        echo "========================================"
+        echo "RSTP STATUS"
+        ovs-vsctl get bridge br-acc rstp_enable 2>/dev/null || echo "br-acc no existe"
+        echo ""
+        echo "========================================"
+        echo "BONDS"
+        ovs-appctl bond/show 2>/dev/null || echo "Sin bonds activos"
+      register: resumen_validacion
+      changed_when: false
+
+    - name: "VAL | Mostrar resumen completo"
+      ansible.builtin.debug:
+        msg: "{{ resumen_validacion.stdout_lines }}"
+
+    - name: "VAL | Tabla de resultados esperados"
+      ansible.builtin.debug:
+        msg:
+          - "==========================================================="
+          - "  TABLA DE VALIDACIONES — SWACCLIM2"
+          - "==========================================================="
+          - "  Hostname          : swacclim2"
+          - "  Bridge OVS        : br-acc"
+          - "  RSTP              : true (never root, priority 28672)"
+          - "  bond-pcsd1-sa2    : ens34+ens35 | active-backup | trunk L2"
+          - "  bond-pcsd2-sa2    : ens36+ens37 | active-backup | trunk L2"
+          - "  int-core-test     : NO EXISTE"
+          - "==========================================================="
+          - "  NO SE CONFIGURAN: SVIs, VRRP, OSPF, BGP, ACLs"
+          - "==========================================================="

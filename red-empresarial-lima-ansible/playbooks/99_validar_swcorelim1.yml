@@ -7,7 +7,7 @@
 #
 # Ejecutar:
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/99_validar_swcorelim1.yml --ask-become-pass
+#     playbooks/99_validar_swcorelim1.yml -e @host_vars/swcorelim1.yml -vv -K
 #
 # Resultados:
 #   - Tabla completa de validaciones con PASS/FAIL/WARN
@@ -376,12 +376,52 @@
         success_msg: "PASS: bond-pcsc1-sd1 presente en br-core."
       ignore_errors: true
 
-    - name: "VAL-OVS | Evaluar bond-pcsc1-sd2 (Core-Dist2)"
+    - name: "VAL-OVS | Verificar modo active-backup de bond-pcsc1-sd1"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sd1 bond_mode
+      register: val_bond_pcsc1_sd1_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar bond-primary ens38 en bond-pcsc1-sd1"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sd1 other_config
+      register: val_bond_pcsc1_sd1_other_config
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar lacp=off en bond-pcsc1-sd1"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sd1 lacp
+      register: val_bond_pcsc1_sd1_lacp
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar trunks en bond-pcsc1-sd1"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc1-sd1 trunks
+      register: val_bond_pcsc1_sd1_trunks
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar bond-pcsc1-sd1"
       ansible.builtin.assert:
         that:
-          - "'bond-pcsc1-sd2' in val_ovs_ports.stdout"
-        fail_msg: "FAIL: bond-pcsc1-sd2 no existe en br-core."
-        success_msg: "PASS: bond-pcsc1-sd2 presente en br-core."
+          - "'active-backup' in val_bond_pcsc1_sd1_mode.stdout"
+          - "'bond-primary=\"ens38\"' in val_bond_pcsc1_sd1_other_config.stdout or 'bond-primary=ens38' in val_bond_pcsc1_sd1_other_config.stdout"
+          - "'off' in val_bond_pcsc1_sd1_lacp.stdout"
+          - "'10,20,30,40,50,60,70,80,99' in val_bond_pcsc1_sd1_trunks.stdout"
+        fail_msg: >
+          FAIL: bond-pcsc1-sd1 incorrecto.
+          bond_mode={{ val_bond_pcsc1_sd1_mode.stdout }}
+          other_config={{ val_bond_pcsc1_sd1_other_config.stdout }}
+          lacp={{ val_bond_pcsc1_sd1_lacp.stdout }}
+          trunks={{ val_bond_pcsc1_sd1_trunks.stdout }}
+        success_msg: "PASS: bond-pcsc1-sd1 correctamente configurado."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar que NO existe bond-pcsc1-sd2"
+      ansible.builtin.assert:
+        that:
+          - "'bond-pcsc1-sd2' not in val_ovs_ports.stdout"
+        fail_msg: "FAIL: bond-pcsc1-sd2 sigue existiendo, NO debería."
+        success_msg: "PASS: bond-pcsc1-sd2 NO existe (correcto)."
       ignore_errors: true
 
     - name: "VAL-OVS | Verificar que NO existe int-core-test"
@@ -616,7 +656,6 @@
           - "  DNS              : google.com resuelve                 "
           - "========================================================="
           - "  PRUEBAS PENDIENTES (vecinos no configurados aún):"
-          - "  [ ] ping 10.255.21.2  → requiere SWCORELIM2"
+          - "  [ ] ping 10.255.21.2 → requiere SWCORELIM2"
           - "  [ ] bond-pcsc1-sd1 UP → requiere SWDISTLIM1"
-          - "  [ ] bond-pcsc1-sd2 UP → requiere SWDISTLIM2"
           - "========================================================="

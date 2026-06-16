@@ -1,0 +1,51 @@
+---
+# =============================================================================
+# ROLE: swacclim1 — defaults/main.yml
+# =============================================================================
+# Valores por defecto del rol. Sobreescritos por host_vars/swacclim1.yml.
+# =============================================================================
+
+swacclim1_hostname: "swacclim1"
+backup_dir: "/root/backups/swacclim1"
+netplan_config_dir: "/etc/netplan"
+netplan_config_file: "/etc/netplan/99-swacclim1-netplan.yaml"
+
+ovs_bridge_name: "br-acc"
+ovs_rstp_enabled: "true"   # Habilitado: Acceso nunca debe ser root bridge (priority 28672)
+# RSTP priority: 28672 = mayor que Distribución → Acceso nunca elegido root
+
+ovs_script_path: "/usr/local/sbin/jhalex-swacclim1-ovs.sh"
+ovs_service_name: "jhalex-swacclim1-ovs"
+ovs_service_path: "/etc/systemd/system/jhalex-swacclim1-ovs.service"
+
+dns_servers_local:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+required_interfaces:
+  - ens34
+  - ens35
+  - ens36
+  - ens37
+
+swacclim1_packages:
+  - openssh-server
+  - openvswitch-switch
+  - frr
+  - frr-pythontools
+  - keepalived
+  - nftables
+  - lldpd
+  - tcpdump
+  - traceroute
+  - net-tools
+  - curl
+  - wget
+  - vim
+  - git
+  - ansible
+
+swacclim1_active_services:
+  - ssh
+  - openvswitch-switch
+  - lldpd

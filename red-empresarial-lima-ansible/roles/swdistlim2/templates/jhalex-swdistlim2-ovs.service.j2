@@ -1,0 +1,20 @@
+#!/usr/bin/bash
+
+# =============================================================================
+# SERVICIO SYSTEMD: jhalex-swdistlim2-ovs.service
+# =============================================================================
+[Unit]
+Description=JHALEX OVS Configuration Service para SWDISTLIM2
+After=network.target openvswitch-switch.service
+Wants=openvswitch-switch.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/jhalex-swdistlim2-ovs.sh
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

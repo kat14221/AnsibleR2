@@ -2,6 +2,12 @@
 # =============================================================================
 # PLAYBOOK: 99_validar_swcorelim2.yml
 # =============================================================================
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_swcorelim2.yml -e @host_vars/swcorelim2.yml -vv -K
+#
+# =============================================================================
 
 - name: "SWCORELIM2 :: Validación completa — Solo lectura, sin cambios"
   hosts: swcorelim2
@@ -338,12 +344,12 @@
         success_msg: "PASS: br-core tiene rstp_enable=false."
       ignore_errors: true
 
-    - name: "VAL-OVS | Verificar bond-pcsc2-sd1"
+    - name: "VAL-OVS | Verificar que NO existe bond-pcsc2-sd1"
       ansible.builtin.assert:
         that:
-          - "'bond-pcsc2-sd1' in val_ovs_ports.stdout"
-        fail_msg: "FAIL: bond-pcsc2-sd1 no existe en br-core."
-        success_msg: "PASS: bond-pcsc2-sd1 presente en br-core."
+          - "'bond-pcsc2-sd1' not in val_ovs_ports.stdout"
+        fail_msg: "FAIL: bond-pcsc2-sd1 sigue existiendo, NO debería."
+        success_msg: "PASS: bond-pcsc2-sd1 NO existe (correcto)."
       ignore_errors: true
 
     - name: "VAL-OVS | Verificar bond-pcsc2-sd2"
@@ -352,6 +358,46 @@
           - "'bond-pcsc2-sd2' in val_ovs_ports.stdout"
         fail_msg: "FAIL: bond-pcsc2-sd2 no existe en br-core."
         success_msg: "PASS: bond-pcsc2-sd2 presente en br-core."
+      ignore_errors: true
+
+    - name: "VAL-OVS | Verificar modo active-backup de bond-pcsc2-sd2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc2-sd2 bond_mode
+      register: val_bond_pcsc2_sd2_mode
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar bond-primary ens41 en bond-pcsc2-sd2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc2-sd2 other_config
+      register: val_bond_pcsc2_sd2_other_config
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar lacp=off en bond-pcsc2-sd2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc2-sd2 lacp
+      register: val_bond_pcsc2_sd2_lacp
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Verificar trunks en bond-pcsc2-sd2"
+      ansible.builtin.command: ovs-vsctl get port bond-pcsc2-sd2 trunks
+      register: val_bond_pcsc2_sd2_trunks
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-OVS | Evaluar bond-pcsc2-sd2"
+      ansible.builtin.assert:
+        that:
+          - "'active-backup' in val_bond_pcsc2_sd2_mode.stdout"
+          - "'bond-primary=\"ens41\"' in val_bond_pcsc2_sd2_other_config.stdout or 'bond-primary=ens41' in val_bond_pcsc2_sd2_other_config.stdout"
+          - "'off' in val_bond_pcsc2_sd2_lacp.stdout"
+          - "'10,20,30,40,50,60,70,80,99' in val_bond_pcsc2_sd2_trunks.stdout"
+        fail_msg: >
+          FAIL: bond-pcsc2-sd2 incorrecto.
+          bond_mode={{ val_bond_pcsc2_sd2_mode.stdout }}
+          other_config={{ val_bond_pcsc2_sd2_other_config.stdout }}
+          lacp={{ val_bond_pcsc2_sd2_lacp.stdout }}
+          trunks={{ val_bond_pcsc2_sd2_trunks.stdout }}
+        success_msg: "PASS: bond-pcsc2-sd2 correctamente configurado."
       ignore_errors: true
 
     - name: "VAL-OVS | Verificar que NO existe int-core-test"

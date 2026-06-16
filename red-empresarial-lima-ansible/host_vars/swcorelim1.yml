@@ -78,16 +78,15 @@ swcorelim1_netplan_content: |
         dhcp4: false
       ens39:
         dhcp4: false
-      ens40:
-        dhcp4: false
-      ens41:
-        dhcp4: false
 
 
 # -----------------------------------------------------------------------
 # Interfaces físicas validadas (mapeo ESXi → Linux)
 # NO inventar nombres. Usar EXACTAMENTE estos.
 # -----------------------------------------------------------------------
+# Nueva topología: SWCORELIM1 solo conecta a SWCORELIM2 y SWDISTLIM1.
+# ens40/ens41 ya NO son usados por OVS en SWCORELIM1 (eliminado bond-pcsc1-sd2).
+#
 # | Interfaz | Port Group ESXi   | Función                           |
 # |----------|-------------------|-----------------------------------|
 # | ens34    | R1-S1             | Enlace L3 → RLIM1-PRINCIPAL       |
@@ -96,8 +95,8 @@ swcorelim1_netplan_content: |
 # | ens37    | PCSC1-SC2(2)      | Miembro 2 bond Core1-Core2        |
 # | ens38    | PCSC1-SD1(1)      | Miembro 1 bond Core1-Dist1        |
 # | ens39    | PCSC1-SD1(2)      | Miembro 2 bond Core1-Dist1        |
-# | ens40    | PCSC1-SD2(1)      | Miembro 1 bond Core1-Dist2        |
-# | ens41    | PCSC1-SD2(2)      | Miembro 2 bond Core1-Dist2        |
+# | ens40    | (no usado por OVS)| Eliminado de bond-pcsc1-sd2       |
+# | ens41    | (no usado por OVS)| Eliminado de bond-pcsc1-sd2       |
 
 required_interfaces:
   - ens34
@@ -106,8 +105,6 @@ required_interfaces:
   - ens37
   - ens38
   - ens39
-  - ens40
-  - ens41
 
 # -----------------------------------------------------------------------
 # Enlace L3 hacia RLIM1-PRINCIPAL (ens34)
@@ -158,20 +155,10 @@ bond_core_dist1_mode:    "active-backup"
 bond_core_dist1_primary: "ens38"
 
 # -----------------------------------------------------------------------
-# Interfaces OVS Bond — Core1-Dist2 (SWDISTLIM2)
-# -----------------------------------------------------------------------
-bond_core_dist2_name:    "bond-pcsc1-sd2"
-bond_core_dist2_members:
-  - ens40
-  - ens41
-bond_core_dist2_mode:    "active-backup"
-bond_core_dist2_primary: "ens40"
-
-# -----------------------------------------------------------------------
 # Bridge OVS principal
 # -----------------------------------------------------------------------
 ovs_bridge_name:     "br-core"
-ovs_rstp_enabled:    "true"
+ovs_rstp_enabled:    "false"
 
 # -----------------------------------------------------------------------
 # IP del bridge br-core para enlace Core-Core

@@ -16,6 +16,10 @@ Este repositorio contiene la configuración Ansible para la infraestructura de l
 | RLIM2-SECUNDARIO     | Router/Firewall secundario Lima                  | 🔜 Próximo |
 | SWCORELIM1           | Core switch principal Lima                        | ✅ Incluido |
 | SWCORELIM2           | Core switch secundario Lima                       | ✅ Incluido |
+| SWDISTLIM1           | Distribución Switch 1 Lima                        | ✅ Incluido |
+| SWDISTLIM2           | Distribución Switch 2 Lima                        | ✅ Incluido |
+| SWACCLIM1            | Acceso Switch 1 Lima                             | ✅ Incluido |
+| SWACCLIM2            | Acceso Switch 2 Lima                             | ✅ Incluido |
 
 ### Arquitectura General
 
@@ -186,6 +190,15 @@ ansible-playbook \
 | **Backups**      | Automáticos antes de cada cambio en `/root/backups/`   |
 | **Logs**         | `./logs/ansible.log` + capturas opcionales             |
 
+### Distribución y Acceso (Nueva Topología)
+
+| Componente       | Configuración                                          |
+|------------------|--------------------------------------------------------|
+| **SWDISTLIM1**    | Distribución Switch 1: Core1, Dist2, Acc1, Acc2         |
+| **SWDISTLIM2**    | Distribución Switch 2: Core2, Dist1, Acc1, Acc2         |
+| **SWACCLIM1**     | Acceso Switch 1: Dist1, Dist2                       |
+| **SWACCLIM2**     | Acceso Switch 2: Dist1, Dist2                       |
+
 ---
 
 ## Variables Clave
@@ -244,6 +257,18 @@ ansible-playbook \
 
 - `02_configurar_rlim1.yml` — RLIM1-PRINCIPAL (router/firewall principal)
 - `03_configurar_rlim2.yml` — RLIM2-SECUNDARIO (router/firewall secundario)
+
+### Distribución y Acceso (Implementación Completa)
+
+- `02_configurar_swdistlim1.yml` — SWDISTLIM1 (Distribución Switch 1)
+- `02_configurar_swdistlim2.yml` — SWDISTLIM2 (Distribución Switch 2)
+- `02_configurar_swacclim1.yml` — SWACCLIM1 (Acceso Switch 1)
+- `02_configurar_swacclim2.yml` — SWACCLIM2 (Acceso Switch 2)
+
+- `99_validar_swdistlim1.yml` — Validación de SWDISTLIM1
+- `99_validar_swdistlim2.yml` — Validación de SWDISTLIM2
+- `99_validar_swacclim1.yml` — Validación de SWACCLIM1
+- `99_validar_swacclim2.yml` — Validación de SWACCLIM2
 
 ---
 
