@@ -35,6 +35,18 @@
       ansible.builtin.command: hostname
       changed_when: false
 
+    - name: "VAL-VLAN | ip_forward"
+      ansible.builtin.command: cat /proc/sys/net/ipv4/ip_forward
+      register: val_ip_forward
+      changed_when: false
+
+    - name: "VAL-VLAN | Assert ip_forward=1"
+      ansible.builtin.assert:
+        that:
+          - val_ip_forward.stdout | trim == '1'
+        fail_msg: "ERROR: ip_forward no está activo en {{ inventory_hostname }}."
+        success_msg: "PASS: ip_forward=1 en {{ inventory_hostname }}."
+
     - name: "VAL-VLAN | ip route"
       ansible.builtin.command: ip route
       register: val_routes
@@ -100,6 +112,28 @@
         fail_msg: "ERROR: servicios no activos en {{ inventory_hostname }}."
         success_msg: "PASS: servicios activos en {{ inventory_hostname }}."
 
+    - name: "VAL-VLAN | Revisar instancias VRRP declaradas"
+      ansible.builtin.command: grep -n "vrrp_instance" /etc/keepalived/keepalived.conf
+      register: val_keepalived_instances
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL-VLAN | Assert solo VI_LIMA_CORE"
+      ansible.builtin.assert:
+        that:
+          - "'VI_LIMA_CORE' in val_keepalived_instances.stdout"
+          - "'VI_10' not in val_keepalived_instances.stdout"
+          - "'VI_20' not in val_keepalived_instances.stdout"
+          - "'VI_30' not in val_keepalived_instances.stdout"
+          - "'VI_40' not in val_keepalived_instances.stdout"
+          - "'VI_50' not in val_keepalived_instances.stdout"
+          - "'VI_60' not in val_keepalived_instances.stdout"
+          - "'VI_70' not in val_keepalived_instances.stdout"
+          - "'VI_80' not in val_keepalived_instances.stdout"
+          - "'VI_99' not in val_keepalived_instances.stdout"
+        fail_msg: "ERROR: {{ inventory_hostname }} aún tiene instancias VRRP antiguas."
+        success_msg: "PASS: {{ inventory_hostname }} solo tiene VI_LIMA_CORE."
+
     - name: "VAL-VLAN | Ping al VIP por cada VLAN"
       ansible.builtin.command: "ping -I {{ item.ifname }} -c 10 {{ item.vip }}"
       register: val_vip_ping
@@ -117,11 +151,9 @@
     - name: "VAL-VLAN | Resumen por VLAN"
       ansible.builtin.debug:
         msg: >-
-          {{ inventory_hostname }} | VLAN {{ item.vlan }} |
-          SVI={{ item.ifname }} |
-          VIP={{ item.vip }} rc={{ val_vip_ping.results[idx].rc }} |
-          Peer={{ item.peer_ip }} rc={{ val_peer_ping.results[idx].rc }} |
-          Resultado={{ 'OK' if val_vip_ping.results[idx].rc == 0 and val_peer_ping.results[idx].rc == 0 else 'FAIL' }}
+          VLAN {{ item.vlan }} {{ 'OK' if val_vip_ping.results[idx].rc == 0 and val_peer_ping.results[idx].rc == 0 else 'FAIL' }}
+          | host={{ inventory_hostname }} | SVI={{ item.ifname }} | VIP={{ item.vip }} rc={{ val_vip_ping.results[idx].rc }}
+          | Peer={{ item.peer_ip }} rc={{ val_peer_ping.results[idx].rc }}
       loop: "{{ svis }}"
       loop_control:
         index_var: idx

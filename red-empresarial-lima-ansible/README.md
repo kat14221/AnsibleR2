@@ -287,7 +287,7 @@ ansible-playbook \
 ```bash
 git status
 git add roles/core_l3_fase3 playbooks host_vars/swcorelim1.yml host_vars/swcorelim2.yml README.md
-git commit -m "corrige keepalived core l3 vrrp estable y validacion vlans"
+git commit -m "migra vrrp core l3 a instancia unica y automatiza validacion"
 git push
 ```
 
@@ -318,9 +318,22 @@ ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim1_
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim2_l3.yml --syntax-check -e @host_vars/swcorelim2.yml
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_core_l3_fase3.yml --syntax-check
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_vlans_core_l3_fase3.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml playbooks/04_migrar_core_l3_vrrp_estable.yml --syntax-check
 ```
 
-### Aplicación y validación (orden recomendado)
+### Aplicación recomendada
+
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/04_migrar_core_l3_vrrp_estable.yml -vv -K
+```
+
+### Validación final
+
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_vlans_core_l3_fase3.yml -vv -K
+```
+
+### Flujo manual alternativo
 
 ```bash
 # Aplicar primero SWCORELIM1:

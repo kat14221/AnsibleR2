@@ -1,0 +1,91 @@
+---
+# =============================================================================
+# PLAYBOOK: 04_migrar_core_l3_vrrp_estable.yml
+# =============================================================================
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/04_migrar_core_l3_vrrp_estable.yml -vv -K
+#
+# =============================================================================
+
+- name: "SWCORELIM2 :: Preparar migración VRRP estable"
+  hosts: swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  tasks:
+    - name: "PRE-MIG | Detener keepalived temporalmente en SWCORELIM2"
+      ansible.builtin.systemd:
+        name: keepalived
+        state: stopped
+      failed_when: false
+
+- name: "SWCORELIM1 :: Aplicar configuración limpia Core L3"
+  hosts: swcorelim1
+  gather_facts: true
+  become: true
+  serial: 1
+
+  roles:
+    - role: core_l3_fase3
+
+- name: "SWCORELIM1 :: Validar ownership de VIPs tras migración"
+  hosts: swcorelim1
+  gather_facts: true
+  become: true
+  serial: 1
+
+  tasks:
+    - name: "POST-MIG | Esperar estabilización en SWCORELIM1"
+      ansible.builtin.pause:
+        seconds: 20
+
+    - name: "POST-MIG | Capturar direcciones IPv4 en SWCORELIM1"
+      ansible.builtin.command: ip -o -4 addr show
+      register: val_addr_core1
+      changed_when: false
+
+    - name: "POST-MIG | Verificar que SWCORELIM1 tenga todos los VIPs"
+      ansible.builtin.assert:
+        that:
+          - "(item.vip ~ '/') in val_addr_core1.stdout"
+        fail_msg: "ERROR: SWCORELIM1 no tiene el VIP {{ item.vip }} tras la migración."
+        success_msg: "PASS: SWCORELIM1 tiene el VIP {{ item.vip }}."
+      loop: "{{ svis }}"
+
+- name: "SWCORELIM2 :: Aplicar configuración limpia Core L3"
+  hosts: swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  roles:
+    - role: core_l3_fase3
+
+- name: "SWCORELIM2 :: Validar rol BACKUP tras migración"
+  hosts: swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  tasks:
+    - name: "POST-MIG | Esperar estabilización en SWCORELIM2"
+      ansible.builtin.pause:
+        seconds: 30
+
+    - name: "POST-MIG | Capturar direcciones IPv4 en SWCORELIM2"
+      ansible.builtin.command: ip -o -4 addr show
+      register: val_addr_core2
+      changed_when: false
+
+    - name: "POST-MIG | Verificar que SWCORELIM2 quede sin VIPs en estado normal"
+      ansible.builtin.assert:
+        that:
+          - "(item.vip ~ '/') not in val_addr_core2.stdout"
+        fail_msg: "ERROR: SWCORELIM2 aún tiene el VIP {{ item.vip }}. Posible split-brain o takeover inesperado."
+        success_msg: "PASS: SWCORELIM2 no tiene el VIP {{ item.vip }}."
+      loop: "{{ svis }}"
+
+- import_playbook: 99_validar_vlans_core_l3_fase3.yml
