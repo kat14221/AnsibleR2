@@ -280,31 +280,73 @@ ansible-playbook \
 - No ejecutar si fallan los ping hacia RLIM1/RLIM2.
 - No ejecutar si `br-core` no existe.
 - No ejecutar si no existen los bonds de Fase 2 (`bond-pcsc1-sd1`, `bond-pcsc2-sd2`, `bond-pcsc1-sc2`).
+- No usar doble `-e @host_vars/swcorelim1.yml -e @host_vars/swcorelim2.yml` en validaciones multi-host.
 
-### Comandos de ejecución (orden recomendado)
+### Preparación desde OpenCode/Windows
 
 ```bash
-# Primero solo SWCORELIM1:
+git status
+git add roles/core_l3_fase3 playbooks host_vars/swcorelim1.yml host_vars/swcorelim2.yml README.md
+git commit -m "corrige keepalived core l3 vrrp estable y validacion vlans"
+git push
+```
+
+### Actualizar el repo en el equipo ejecutor
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+BRANCH=$(git branch --show-current)
+git status
+git pull --rebase origin $BRANCH
+```
+
+### Verificaciones previas desde un solo equipo ejecutor Ansible
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+ansible-playbook --version
+ansible -i inventories/local/hosts.yml swcorelim1 -m ping -K
+ansible -i inventories/local/hosts.yml swcorelim2 -m ping -K
+```
+
+### Syntax-check obligatorio
+
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/03_configurar_swcorelim1_l3.yml --syntax-check -e @host_vars/swcorelim1.yml
+ansible-playbook -i inventories/local/hosts.yml playbooks/03_configurar_swcorelim2_l3.yml --syntax-check -e @host_vars/swcorelim2.yml
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim1_l3.yml --syntax-check -e @host_vars/swcorelim1.yml
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim2_l3.yml --syntax-check -e @host_vars/swcorelim2.yml
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_core_l3_fase3.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_vlans_core_l3_fase3.yml --syntax-check
+```
+
+### Aplicación y validación (orden recomendado)
+
+```bash
+# Aplicar primero SWCORELIM1:
 ansible-playbook -i inventories/local/hosts.yml playbooks/03_configurar_swcorelim1_l3.yml -e @host_vars/swcorelim1.yml -vv -K
 
 # Validar SWCORELIM1:
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim1_l3.yml -e @host_vars/swcorelim1.yml -vv -K
 
-# Luego SWCORELIM2:
+# Aplicar SWCORELIM2:
 ansible-playbook -i inventories/local/hosts.yml playbooks/03_configurar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K
 
 # Validar SWCORELIM2:
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K
 
-# Luego ambos:
+# Validación final ambos Core:
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_core_l3_fase3.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_vlans_core_l3_fase3.yml -vv -K
 ```
 
 ### Criterios de éxito
 
 - Keepalived activo en ambos Core.
+- SWCORELIM1 mantiene normalmente todos los VIPs.
+- SWCORELIM2 no mantiene los VIPs mientras SWCORELIM1 esté activo.
 - SVIs presentes en ambos Core y `ip_forward=1`.
-- VIPs responden: `192.168.40.1`, `192.168.20.1`, `192.168.99.1`.
+- VIPs responden sin pérdida: `192.168.20.1`, `192.168.40.1`, `192.168.80.1`.
 - Conectividad a Internet desde ambos Core: `ping 8.8.8.8`.
 - No se elimina ni modifica ningún bond/trunk de Fase 2.
 

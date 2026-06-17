@@ -13,6 +13,10 @@
   hosts: swcorelim2
   gather_facts: true
   become: true
+  vars:
+    expected_routes:
+      - "default via 10.10.254.5 dev ens34 metric 100"
+      - "default via 10.10.254.13 dev ens35 metric 200"
 
   tasks:
     - name: "VAL | hostname"
@@ -25,6 +29,7 @@
 
     - name: "VAL | ip route"
       ansible.builtin.command: ip route
+      register: val_routes
       changed_when: false
 
     - name: "VAL | ip_forward"
@@ -56,11 +61,49 @@
         success_msg: "PASS: {{ item.ifname }} presente"
       loop: "{{ svis }}"
 
-    - name: "VAL | ip addr show SVIs (VLAN 10/20/40/99)"
-      ansible.builtin.command: "ip addr show {{ item.ifname }}"
+    - name: "VAL | Leer direccionamiento real de cada SVI"
+      ansible.builtin.command: "ip -br addr show dev {{ item.ifname }}"
+      register: val_svi_real
       changed_when: false
       loop: "{{ svis }}"
-      when: item.vlan in [10, 20, 40, 99]
+
+    - name: "VAL | Verificar IP real esperada en cada SVI"
+      ansible.builtin.assert:
+        that:
+          - "(item.real_ip ~ '/' ~ item.prefix) in val_svi_real.results[idx].stdout"
+        fail_msg: "ERROR: {{ item.ifname }} no tiene la IP real esperada {{ item.real_ip }}/{{ item.prefix }}."
+        success_msg: "PASS: {{ item.ifname }} tiene {{ item.real_ip }}/{{ item.prefix }}."
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL | Verificar rutas default esperadas"
+      ansible.builtin.assert:
+        that:
+          - item in val_routes.stdout
+        fail_msg: "ERROR: falta la ruta '{{ item }}'."
+        success_msg: "PASS: ruta presente '{{ item }}'."
+      loop: "{{ expected_routes }}"
+
+    - name: "VAL | keepalived activo"
+      ansible.builtin.command: systemctl is-active keepalived
+      register: val_keepalived_active
+      changed_when: false
+
+    - name: "VAL | servicio L3 activo"
+      ansible.builtin.command: "systemctl is-active {{ core_l3_service_name | default('jhalex-swcorelim2-l3') }}"
+      register: val_l3_active
+      changed_when: false
+
+    - name: "VAL | Verificar servicios activos"
+      ansible.builtin.assert:
+        that:
+          - val_keepalived_active.stdout | trim == 'active'
+          - val_l3_active.stdout | trim == 'active'
+        fail_msg: >-
+          ERROR: servicios requeridos no activos.
+          keepalived={{ val_keepalived_active.stdout | trim }}, {{ core_l3_service_name }}={{ val_l3_active.stdout | trim }}
+        success_msg: "PASS: keepalived y servicio L3 están activos."
 
     - name: "VAL | systemctl status keepalived"
       ansible.builtin.command: systemctl status keepalived --no-pager
@@ -72,14 +115,93 @@
       changed_when: false
       failed_when: false
 
-    - name: "VAL | ping 8.8.8.8"
-      ansible.builtin.command: ping -c 4 8.8.8.8
+    - name: "VAL | Capturar direccionamiento completo para VIPs"
+      ansible.builtin.command: ip -o -4 addr show
+      register: val_addr_all
       changed_when: false
 
-    - name: "VAL | ping VIPs"
-      ansible.builtin.command: "ping -c 4 {{ item }}"
+    - name: "VAL | Verificar que SWCORELIM2 no tenga VIPs mientras SWCORELIM1 está activo"
+      ansible.builtin.assert:
+        that:
+          - "(item.vip ~ '/') not in val_addr_all.stdout"
+        fail_msg: "ERROR: VIP {{ item.vip }} aparece en SWCORELIM2. Posible split-brain o takeover inesperado."
+        success_msg: "PASS: VIP {{ item.vip }} no está en SWCORELIM2 (comportamiento normal activo/pasivo)."
+      loop: "{{ svis }}"
+
+    - name: "VAL | Ping a cada VIP usando su SVI de origen"
+      ansible.builtin.command: "ping -I {{ item.ifname }} -c 10 {{ item.vip }}"
+      register: val_vip_ping
       changed_when: false
-      loop:
-        - 192.168.40.1
-        - 192.168.20.1
-        - 192.168.99.1
+      failed_when: false
+      loop: "{{ svis }}"
+
+    - name: "VAL | Ping a la IP real del peer por cada VLAN"
+      ansible.builtin.command: "ping -I {{ item.ifname }} -c 4 {{ item.peer_ip }}"
+      register: val_peer_ping
+      changed_when: false
+      failed_when: false
+      loop: "{{ svis }}"
+
+    - name: "VAL | Resumen por VLAN"
+      ansible.builtin.debug:
+        msg: >-
+          VLAN {{ item.vlan }} OK |
+          SVI={{ item.ifname }} |
+          VIP ping rc={{ val_vip_ping.results[idx].rc }} |
+          Peer ping rc={{ val_peer_ping.results[idx].rc }}
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL | Verificar que todos los pings a VIPs pasen"
+      ansible.builtin.assert:
+        that:
+          - val_vip_ping.results[idx].rc == 0
+        fail_msg: "ERROR: VLAN {{ item.vlan }} FAIL en ping al VIP {{ item.vip }}."
+        success_msg: "PASS: VLAN {{ item.vlan }} OK en ping al VIP {{ item.vip }}."
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL | Verificar que todos los pings al peer pasen"
+      ansible.builtin.assert:
+        that:
+          - val_peer_ping.results[idx].rc == 0
+        fail_msg: "ERROR: VLAN {{ item.vlan }} FAIL en ping al peer {{ item.peer_ip }}."
+        success_msg: "PASS: VLAN {{ item.vlan }} OK en ping al peer {{ item.peer_ip }}."
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL | Diagnóstico keepalived reciente"
+      ansible.builtin.shell: |
+        journalctl -u keepalived -n 150 --no-pager | egrep "VI_LIMA_CORE|MASTER|BACKUP|FAULT|priority|advert|Entering" || true
+      register: val_keepalived_journal
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL | Mostrar diagnóstico keepalived"
+      ansible.builtin.debug:
+        msg: "{{ val_keepalived_journal.stdout_lines }}"
+
+    - name: "VAL | Revisar instancias VRRP declaradas en keepalived.conf"
+      ansible.builtin.command: grep -n "vrrp_instance" /etc/keepalived/keepalived.conf
+      register: val_keepalived_instances
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL | Verificar que solo exista VI_LIMA_CORE"
+      ansible.builtin.assert:
+        that:
+          - "'VI_LIMA_CORE' in val_keepalived_instances.stdout"
+          - "'VI_10' not in val_keepalived_instances.stdout"
+          - "'VI_20' not in val_keepalived_instances.stdout"
+          - "'VI_30' not in val_keepalived_instances.stdout"
+          - "'VI_40' not in val_keepalived_instances.stdout"
+          - "'VI_50' not in val_keepalived_instances.stdout"
+          - "'VI_60' not in val_keepalived_instances.stdout"
+          - "'VI_70' not in val_keepalived_instances.stdout"
+          - "'VI_80' not in val_keepalived_instances.stdout"
+          - "'VI_99' not in val_keepalived_instances.stdout"
+        fail_msg: "ERROR: keepalived.conf aún contiene instancias VRRP antiguas."
+        success_msg: "PASS: keepalived.conf solo contiene VI_LIMA_CORE."

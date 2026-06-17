@@ -19,10 +19,14 @@
       - svis is defined and (svis | length) > 0
       - vrrp_state is defined and vrrp_state | length > 0
       - vrrp_priority is defined
+      - core_vrrp_interface is defined and core_vrrp_interface | length > 0
+      - core_vrrp_src_ip is defined and core_vrrp_src_ip | length > 0
+      - core_vrrp_peer_ip is defined and core_vrrp_peer_ip | length > 0
       - vrrp_auth_pass is defined and vrrp_auth_pass | length > 0
+      - (vrrp_auth_pass | length) <= 8
     fail_msg: >-
       ERROR CRÍTICO: faltan variables para Fase 3.
-      Revisa host_vars/{{ inventory_hostname }}.yml (core_l3_* / svis / default_routes / vrrp_*).
+      Revisa host_vars/{{ inventory_hostname }}.yml (core_l3_* / svis / default_routes / vrrp_* / core_vrrp_*).
     success_msg: "OK: variables críticas presentes para Fase 3."
   tags: always
 

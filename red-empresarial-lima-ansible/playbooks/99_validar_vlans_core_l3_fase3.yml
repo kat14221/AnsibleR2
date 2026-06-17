@@ -1,0 +1,166 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_vlans_core_l3_fase3.yml
+# =============================================================================
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_vlans_core_l3_fase3.yml -vv -K
+#
+# =============================================================================
+
+- name: "SWCORELIM1+SWCORELIM2 :: Validación detallada de VLANs Fase 3 (solo lectura)"
+  hosts:
+    - swcorelim1
+    - swcorelim2
+  gather_facts: true
+  become: true
+  vars:
+    expected_routes: >-
+      {{
+        [
+          'default via 10.10.254.1 dev ens34 metric 100',
+          'default via 10.10.254.9 dev ens35 metric 200'
+        ]
+        if inventory_hostname == 'swcorelim1'
+        else
+        [
+          'default via 10.10.254.5 dev ens34 metric 100',
+          'default via 10.10.254.13 dev ens35 metric 200'
+        ]
+      }}
+
+  tasks:
+    - name: "VAL-VLAN | hostname"
+      ansible.builtin.command: hostname
+      changed_when: false
+
+    - name: "VAL-VLAN | ip route"
+      ansible.builtin.command: ip route
+      register: val_routes
+      changed_when: false
+
+    - name: "VAL-VLAN | ip -o -4 addr show"
+      ansible.builtin.command: ip -o -4 addr show
+      register: val_addr_all
+      changed_when: false
+
+    - name: "VAL-VLAN | ovs-vsctl list-ports br-core"
+      ansible.builtin.command: "ovs-vsctl list-ports {{ core_bridge | default('br-core') }}"
+      register: val_ports
+      changed_when: false
+
+    - name: "VAL-VLAN | assert SVIs presentes en OVS"
+      ansible.builtin.assert:
+        that:
+          - item.ifname in val_ports.stdout_lines
+        fail_msg: "ERROR: falta SVI {{ item.ifname }} (VLAN {{ item.vlan }}) en {{ inventory_hostname }}."
+        success_msg: "PASS: {{ inventory_hostname }} tiene {{ item.ifname }}."
+      loop: "{{ svis }}"
+
+    - name: "VAL-VLAN | Leer direccionamiento de cada SVI"
+      ansible.builtin.command: "ip -br addr show dev {{ item.ifname }}"
+      register: val_svi_real
+      changed_when: false
+      loop: "{{ svis }}"
+
+    - name: "VAL-VLAN | Verificar IP real esperada"
+      ansible.builtin.assert:
+        that:
+          - "(item.real_ip ~ '/' ~ item.prefix) in val_svi_real.results[idx].stdout"
+        fail_msg: "ERROR: {{ inventory_hostname }} no tiene {{ item.real_ip }}/{{ item.prefix }} en {{ item.ifname }}."
+        success_msg: "PASS: {{ inventory_hostname }} tiene {{ item.real_ip }}/{{ item.prefix }} en {{ item.ifname }}."
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL-VLAN | Verificar rutas default"
+      ansible.builtin.assert:
+        that:
+          - item in val_routes.stdout
+        fail_msg: "ERROR: falta ruta '{{ item }}' en {{ inventory_hostname }}."
+        success_msg: "PASS: ruta '{{ item }}' presente en {{ inventory_hostname }}."
+      loop: "{{ expected_routes }}"
+
+    - name: "VAL-VLAN | keepalived activo"
+      ansible.builtin.command: systemctl is-active keepalived
+      register: val_keepalived_active
+      changed_when: false
+
+    - name: "VAL-VLAN | servicio L3 activo"
+      ansible.builtin.command: "systemctl is-active {{ core_l3_service_name }}"
+      register: val_l3_active
+      changed_when: false
+
+    - name: "VAL-VLAN | assert servicios activos"
+      ansible.builtin.assert:
+        that:
+          - val_keepalived_active.stdout | trim == 'active'
+          - val_l3_active.stdout | trim == 'active'
+        fail_msg: "ERROR: servicios no activos en {{ inventory_hostname }}."
+        success_msg: "PASS: servicios activos en {{ inventory_hostname }}."
+
+    - name: "VAL-VLAN | Ping al VIP por cada VLAN"
+      ansible.builtin.command: "ping -I {{ item.ifname }} -c 10 {{ item.vip }}"
+      register: val_vip_ping
+      changed_when: false
+      failed_when: false
+      loop: "{{ svis }}"
+
+    - name: "VAL-VLAN | Ping al peer real por cada VLAN"
+      ansible.builtin.command: "ping -I {{ item.ifname }} -c 4 {{ item.peer_ip }}"
+      register: val_peer_ping
+      changed_when: false
+      failed_when: false
+      loop: "{{ svis }}"
+
+    - name: "VAL-VLAN | Resumen por VLAN"
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} | VLAN {{ item.vlan }} |
+          SVI={{ item.ifname }} |
+          VIP={{ item.vip }} rc={{ val_vip_ping.results[idx].rc }} |
+          Peer={{ item.peer_ip }} rc={{ val_peer_ping.results[idx].rc }} |
+          Resultado={{ 'OK' if val_vip_ping.results[idx].rc == 0 and val_peer_ping.results[idx].rc == 0 else 'FAIL' }}
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL-VLAN | Assert ping a VIP por VLAN"
+      ansible.builtin.assert:
+        that:
+          - val_vip_ping.results[idx].rc == 0
+        fail_msg: "ERROR: VLAN {{ item.vlan }} FAIL en ping al VIP {{ item.vip }} desde {{ inventory_hostname }}."
+        success_msg: "PASS: VLAN {{ item.vlan }} OK en ping al VIP {{ item.vip }} desde {{ inventory_hostname }}."
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL-VLAN | Assert ping al peer por VLAN"
+      ansible.builtin.assert:
+        that:
+          - val_peer_ping.results[idx].rc == 0
+        fail_msg: "ERROR: VLAN {{ item.vlan }} FAIL en ping al peer {{ item.peer_ip }} desde {{ inventory_hostname }}."
+        success_msg: "PASS: VLAN {{ item.vlan }} OK en ping al peer {{ item.peer_ip }} desde {{ inventory_hostname }}."
+      loop: "{{ svis }}"
+      loop_control:
+        index_var: idx
+
+    - name: "VAL-VLAN | Validar ownership activo/pasivo de VIPs"
+      ansible.builtin.assert:
+        that:
+          - "(item ~ '/') in hostvars['swcorelim1'].val_addr_all.stdout"
+          - "(item ~ '/') not in hostvars['swcorelim2'].val_addr_all.stdout"
+        fail_msg: "ERROR: VIP {{ item }} no está exclusivamente en SWCORELIM1. Posible split-brain."
+        success_msg: "PASS: VIP {{ item }} está solo en SWCORELIM1."
+      loop:
+        - "192.168.10.1"
+        - "192.168.20.1"
+        - "192.168.30.1"
+        - "192.168.40.1"
+        - "192.168.50.17"
+        - "192.168.60.1"
+        - "192.168.70.1"
+        - "192.168.80.1"
+        - "192.168.99.1"
+      run_once: true

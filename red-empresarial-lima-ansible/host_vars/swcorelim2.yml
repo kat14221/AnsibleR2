@@ -5,9 +5,9 @@
 # Plataforma  : VMware ESXi
 # SO          : Ubuntu Server 24.04 LTS
 # Tecnología  : Open vSwitch (balance-slb, RSTP)
-# Rol         : Core L2/L3 local — no enruta dinámicamente todavía
+# Rol         : Core L3 local con SVIs, VRRP activo/pasivo y rutas estáticas
 #
-# PROHIBIDO configurar: VLANs, VRRP, OSPF, BGP, LACP, ACLs, DHCP, MLAG
+# PROHIBIDO configurar en esta fase: OSPF, BGP, LACP, ACLs, DHCP Relay, MLAG
 # =============================================================================
 
 ---
@@ -128,7 +128,10 @@ core_l3_sysctl_conf_path: "/etc/sysctl.d/99-jhalex-core-routing.conf"
 
 vrrp_state: "BACKUP"
 vrrp_priority: 100
-vrrp_auth_pass: "JHALEXVRRP"
+core_vrrp_interface: "br-core"
+core_vrrp_src_ip: "10.255.21.2"
+core_vrrp_peer_ip: "10.255.21.1"
+vrrp_auth_pass: "JHALEX99"
 
 default_routes:
   - via: "10.10.254.5"

@@ -1,23 +1,18 @@
 ---
 core_l3_enabled: false
-
 core_bridge: "br-core"
-
 core_l3_script_path: "/usr/local/sbin/jhalex-core-l3.sh"
-
 core_l3_service_name: "jhalex-{{ inventory_hostname }}-l3"
 core_l3_service_path: "/etc/systemd/system/{{ core_l3_service_name }}.service"
-
 core_ovs_dependency_service_name: "{{ ovs_service_name | default('openvswitch-switch') }}"
-
 core_l3_sysctl_conf_path: "/etc/sysctl.d/99-jhalex-core-routing.conf"
-
 keepalived_conf_path: "/etc/keepalived/keepalived.conf"
 keepalived_service_name: "keepalived"
-
-vrrp_auth_pass: "JHALEXVRRP"
+core_vrrp_interface: "br-core"
+core_vrrp_src_ip: ""
+core_vrrp_peer_ip: ""
+vrrp_auth_pass: "JHALEX99"
 vrrp_state: "BACKUP"
 vrrp_priority: 100
-
 default_routes: []
 svis: []
