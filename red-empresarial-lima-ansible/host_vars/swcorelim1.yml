@@ -220,7 +220,7 @@ core_ovs_dependency_service_name: "jhalex-swcorelim1-ovs"
 
 core_l3_sysctl_conf_path: "/etc/sysctl.d/99-jhalex-core-routing.conf"
 
-vrrp_state: "BACKUP"
+vrrp_state: "MASTER"
 vrrp_priority: 150
 core_vrrp_interface: "br-core"
 core_vrrp_src_ip: "10.255.21.1"
