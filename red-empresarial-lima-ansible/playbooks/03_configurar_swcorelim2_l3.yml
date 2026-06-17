@@ -1,0 +1,36 @@
+---
+# =============================================================================
+# PLAYBOOK: 03_configurar_swcorelim2_l3.yml
+# =============================================================================
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/03_configurar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K
+#
+# Dry-run:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/03_configurar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K --check --diff
+#
+# =============================================================================
+
+- name: "SWCORELIM2 :: Fase 3 — Core L3 (SVIs + VRRP + rutas)"
+  hosts: swcorelim2
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: "PRE | Verificar que el host de destino es swcorelim2"
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == "swcorelim2"
+        fail_msg: "ERROR: Este playbook solo debe ejecutarse en swcorelim2."
+        success_msg: "OK: Host correcto: {{ inventory_hostname }}"
+      tags: always
+
+    - name: "PRE | Verificar que br-core existe antes de Fase 3"
+      ansible.builtin.command: "ovs-vsctl br-exists {{ core_bridge | default('br-core') }}"
+      changed_when: false
+      tags: always
+
+  roles:
+    - role: core_l3_fase3

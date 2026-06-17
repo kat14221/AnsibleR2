@@ -54,7 +54,7 @@ Cada dispositivo clona este repositorio y ejecuta solo su propio playbook:
 ```bash
 # En RLIMENGANO:
 ansible-playbook -i inventories/local/hosts.yml \
-  playbooks/01_configurar_rlimengano.yml --ask-become-pass
+  playbooks/01_configurar_rlimengano.yml -e @host_vars/rlimengano.yml -vv -K
 ```
 
 ---
@@ -152,7 +152,7 @@ Si no coinciden, editar `host_vars/rlimengano.yml` con los valores correctos.
 ansible-playbook \
   -i inventories/local/hosts.yml \
   playbooks/01_configurar_rlimengano.yml \
-  --check --diff --ask-become-pass
+  -e @host_vars/rlimengano.yml -vv -K --check --diff
 ```
 
 ### 5. Aplicar configuración
@@ -161,7 +161,7 @@ ansible-playbook \
 ansible-playbook \
   -i inventories/local/hosts.yml \
   playbooks/01_configurar_rlimengano.yml \
-  --ask-become-pass
+  -e @host_vars/rlimengano.yml -vv -K
 ```
 
 ### 6. Validar resultado
@@ -170,7 +170,7 @@ ansible-playbook \
 ansible-playbook \
   -i inventories/local/hosts.yml \
   playbooks/99_validar_rlimengano.yml \
-  --ask-become-pass
+  -e @host_vars/rlimengano.yml -vv -K
 ```
 
 ---
@@ -269,6 +269,44 @@ ansible-playbook \
 - `99_validar_swdistlim2.yml` — Validación de SWDISTLIM2
 - `99_validar_swacclim1.yml` — Validación de SWACCLIM1
 - `99_validar_swacclim2.yml` — Validación de SWACCLIM2
+
+---
+
+## Fase 3 — Core L3 (SVIs + VRRP + rutas)
+
+### Advertencias (obligatorio antes de ejecutar)
+
+- Confirmar snapshot/backup de SWCORELIM1 y SWCORELIM2.
+- No ejecutar si fallan los ping hacia RLIM1/RLIM2.
+- No ejecutar si `br-core` no existe.
+- No ejecutar si no existen los bonds de Fase 2 (`bond-pcsc1-sd1`, `bond-pcsc2-sd2`, `bond-pcsc1-sc2`).
+
+### Comandos de ejecución (orden recomendado)
+
+```bash
+# Primero solo SWCORELIM1:
+ansible-playbook -i inventories/local/hosts.yml playbooks/03_configurar_swcorelim1_l3.yml -e @host_vars/swcorelim1.yml -vv -K
+
+# Validar SWCORELIM1:
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim1_l3.yml -e @host_vars/swcorelim1.yml -vv -K
+
+# Luego SWCORELIM2:
+ansible-playbook -i inventories/local/hosts.yml playbooks/03_configurar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K
+
+# Validar SWCORELIM2:
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K
+
+# Luego ambos:
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_core_l3_fase3.yml -vv -K
+```
+
+### Criterios de éxito
+
+- Keepalived activo en ambos Core.
+- SVIs presentes en ambos Core y `ip_forward=1`.
+- VIPs responden: `192.168.40.1`, `192.168.20.1`, `192.168.99.1`.
+- Conectividad a Internet desde ambos Core: `ping 8.8.8.8`.
+- No se elimina ni modifica ningún bond/trunk de Fase 2.
 
 ---
 

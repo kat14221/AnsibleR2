@@ -1,0 +1,136 @@
+---
+- name: "CORE-L3 | Validar que core_l3_enabled está activo"
+  ansible.builtin.assert:
+    that:
+      - core_l3_enabled | bool
+    fail_msg: >-
+      ERROR: core_l3_enabled=false. Esta fase no debe ejecutarse sin habilitación explícita
+      en host_vars (core_l3_enabled: true).
+    success_msg: "OK: core_l3_enabled=true"
+  tags: always
+
+- name: "CORE-L3 | Validar variables requeridas"
+  ansible.builtin.assert:
+    that:
+      - core_bridge is defined and core_bridge | length > 0
+      - core_l3_script_path is defined and core_l3_script_path | length > 0
+      - core_l3_service_name is defined and core_l3_service_name | length > 0
+      - default_routes is defined and (default_routes | length) > 0
+      - svis is defined and (svis | length) > 0
+      - vrrp_state is defined and vrrp_state | length > 0
+      - vrrp_priority is defined
+      - vrrp_auth_pass is defined and vrrp_auth_pass | length > 0
+    fail_msg: >-
+      ERROR CRÍTICO: faltan variables para Fase 3.
+      Revisa host_vars/{{ inventory_hostname }}.yml (core_l3_* / svis / default_routes / vrrp_*).
+    success_msg: "OK: variables críticas presentes para Fase 3."
+  tags: always
+
+- name: "CORE-L3 | Instalar keepalived (si no está instalado)"
+  ansible.builtin.apt:
+    name:
+      - keepalived
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  tags: packages
+
+- name: "CORE-L3 | Desplegar script L3 idempotente"
+  ansible.builtin.template:
+    src: "core_l3.sh.j2"
+    dest: "{{ core_l3_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  tags: core_l3
+
+- name: "CORE-L3 | Persistir IPv4 forwarding en sysctl.d"
+  ansible.builtin.copy:
+    content: "net.ipv4.ip_forward=1\n"
+    dest: "{{ core_l3_sysctl_conf_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "apply sysctl"
+  tags: sysctl
+
+- name: "CORE-L3 | Crear unidad systemd {{ core_l3_service_name }}"
+  ansible.builtin.template:
+    src: "core_l3.service.j2"
+    dest: "{{ core_l3_service_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "reload systemd"
+  tags: core_l3
+
+- name: "CORE-L3 | Configurar keepalived.conf"
+  ansible.builtin.template:
+    src: "keepalived.conf.j2"
+    dest: "{{ keepalived_conf_path | default('/etc/keepalived/keepalived.conf') }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: "restart keepalived"
+  tags: keepalived
+
+- name: "CORE-L3 | Crear directorio override de keepalived"
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ keepalived_service_name | default('keepalived') }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: keepalived
+
+- name: "CORE-L3 | Asegurar orden de arranque: keepalived después de {{ core_l3_service_name }}"
+  ansible.builtin.template:
+    src: "keepalived.override.conf.j2"
+    dest: "/etc/systemd/system/{{ keepalived_service_name | default('keepalived') }}.service.d/10-jhalex-core-l3.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - "reload systemd"
+    - "restart keepalived"
+  tags: keepalived
+
+- name: "CORE-L3 | Omitir runtime systemd en check mode"
+  ansible.builtin.debug:
+    msg: "CHECK MODE: se omiten daemon_reload/enable/restart de servicios."
+  when: ansible_check_mode
+  tags: always
+
+- name: "CORE-L3 | Recargar systemd daemon"
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: not ansible_check_mode
+  tags: core_l3
+
+- name: "CORE-L3 | Habilitar servicio L3 en el arranque"
+  ansible.builtin.systemd:
+    name: "{{ core_l3_service_name }}"
+    enabled: true
+  when: not ansible_check_mode
+  tags: core_l3
+
+- name: "CORE-L3 | Ejecutar servicio L3 (SVIs + rutas + sysctl)"
+  ansible.builtin.systemd:
+    name: "{{ core_l3_service_name }}"
+    state: restarted
+  when: not ansible_check_mode
+  tags: core_l3
+
+- name: "CORE-L3 | Habilitar keepalived en el arranque"
+  ansible.builtin.systemd:
+    name: "{{ keepalived_service_name | default('keepalived') }}"
+    enabled: true
+  when: not ansible_check_mode
+  tags: keepalived
+
+- name: "CORE-L3 | Reiniciar keepalived"
+  ansible.builtin.systemd:
+    name: "{{ keepalived_service_name | default('keepalived') }}"
+    state: restarted
+  when: not ansible_check_mode
+  tags: keepalived

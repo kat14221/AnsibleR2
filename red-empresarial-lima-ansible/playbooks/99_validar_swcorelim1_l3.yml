@@ -1,0 +1,85 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_swcorelim1_l3.yml
+# =============================================================================
+#
+# Ejecutar:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_swcorelim1_l3.yml -e @host_vars/swcorelim1.yml -vv -K
+#
+# =============================================================================
+
+- name: "SWCORELIM1 :: Validación Fase 3 (solo lectura)"
+  hosts: swcorelim1
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: "VAL | hostname"
+      ansible.builtin.command: hostname
+      changed_when: false
+
+    - name: "VAL | ip -br addr"
+      ansible.builtin.command: ip -br addr
+      changed_when: false
+
+    - name: "VAL | ip route"
+      ansible.builtin.command: ip route
+      changed_when: false
+
+    - name: "VAL | ip_forward"
+      ansible.builtin.command: cat /proc/sys/net/ipv4/ip_forward
+      register: val_ip_forward
+      changed_when: false
+
+    - name: "VAL | assert ip_forward=1"
+      ansible.builtin.assert:
+        that:
+          - val_ip_forward.stdout | trim == "1"
+        fail_msg: "ERROR: ip_forward no está activo (valor={{ val_ip_forward.stdout | trim }})."
+        success_msg: "PASS: ip_forward=1"
+
+    - name: "VAL | ovs-vsctl show"
+      ansible.builtin.command: ovs-vsctl show
+      changed_when: false
+
+    - name: "VAL | ovs-vsctl list-ports br-core"
+      ansible.builtin.command: "ovs-vsctl list-ports {{ core_bridge | default('br-core') }}"
+      register: val_ports
+      changed_when: false
+
+    - name: "VAL | assert SVIs presentes en OVS"
+      ansible.builtin.assert:
+        that:
+          - item.ifname in val_ports.stdout_lines
+        fail_msg: "ERROR: falta SVI {{ item.ifname }} (VLAN {{ item.vlan }}) en {{ core_bridge | default('br-core') }}."
+        success_msg: "PASS: {{ item.ifname }} presente"
+      loop: "{{ svis }}"
+
+    - name: "VAL | ip addr show SVIs (VLAN 10/20/40/99)"
+      ansible.builtin.command: "ip addr show {{ item.ifname }}"
+      changed_when: false
+      loop: "{{ svis }}"
+      when: item.vlan in [10, 20, 40, 99]
+
+    - name: "VAL | systemctl status keepalived"
+      ansible.builtin.command: systemctl status keepalived --no-pager
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL | systemctl status servicio L3"
+      ansible.builtin.command: "systemctl status {{ core_l3_service_name | default('jhalex-swcorelim1-l3') }} --no-pager"
+      changed_when: false
+      failed_when: false
+
+    - name: "VAL | ping 8.8.8.8"
+      ansible.builtin.command: ping -c 4 8.8.8.8
+      changed_when: false
+
+    - name: "VAL | ping VIPs"
+      ansible.builtin.command: "ping -c 4 {{ item }}"
+      changed_when: false
+      loop:
+        - 192.168.40.1
+        - 192.168.20.1
+        - 192.168.99.1

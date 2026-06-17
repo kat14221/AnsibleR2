@@ -1,0 +1,13 @@
+[Unit]
+Description=JHALEX Core L3 (SVIs + rutas + sysctl) — {{ inventory_hostname }}
+After=openvswitch-switch.service network-online.target {{ core_ovs_dependency_service_name }}.service
+Wants=network-online.target
+Requires=openvswitch-switch.service {{ core_ovs_dependency_service_name }}.service
+
+[Service]
+Type=oneshot
+ExecStart={{ core_l3_script_path }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

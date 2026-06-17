@@ -112,3 +112,93 @@ swcorelim2_active_services:
   - ssh
   - openvswitch-switch
   - lldpd
+
+# -----------------------------------------------------------------------
+# FASE 3 — Core L3 (SVIs + VRRP + rutas)
+# -----------------------------------------------------------------------
+core_l3_enabled: true
+core_bridge: "br-core"
+
+core_l3_script_path: "/usr/local/sbin/jhalex-core-l3.sh"
+core_l3_service_name: "jhalex-swcorelim2-l3"
+core_l3_service_path: "/etc/systemd/system/jhalex-swcorelim2-l3.service"
+core_ovs_dependency_service_name: "jhalex-swcorelim2-ovs"
+
+core_l3_sysctl_conf_path: "/etc/sysctl.d/99-jhalex-core-routing.conf"
+
+vrrp_state: "BACKUP"
+vrrp_priority: 100
+vrrp_auth_pass: "JHALEXVRRP"
+
+default_routes:
+  - via: "10.10.254.5"
+    dev: "ens34"
+    metric: 100
+  - via: "10.10.254.13"
+    dev: "ens35"
+    metric: 200
+
+svis:
+  - vlan: 10
+    ifname: "svi-vlan10"
+    prefix: 25
+    real_ip: "192.168.10.126"
+    peer_ip: "192.168.10.125"
+    vip: "192.168.10.1"
+    vrid: 10
+  - vlan: 20
+    ifname: "svi-vlan20"
+    prefix: 24
+    real_ip: "192.168.20.254"
+    peer_ip: "192.168.20.253"
+    vip: "192.168.20.1"
+    vrid: 20
+  - vlan: 30
+    ifname: "svi-vlan30"
+    prefix: 24
+    real_ip: "192.168.30.254"
+    peer_ip: "192.168.30.253"
+    vip: "192.168.30.1"
+    vrid: 30
+  - vlan: 40
+    ifname: "svi-vlan40"
+    prefix: 27
+    real_ip: "192.168.40.30"
+    peer_ip: "192.168.40.29"
+    vip: "192.168.40.1"
+    vrid: 40
+  - vlan: 50
+    ifname: "svi-vlan50"
+    prefix: 28
+    real_ip: "192.168.50.30"
+    peer_ip: "192.168.50.29"
+    vip: "192.168.50.17"
+    vrid: 50
+  - vlan: 60
+    ifname: "svi-vlan60"
+    prefix: 25
+    real_ip: "192.168.60.126"
+    peer_ip: "192.168.60.125"
+    vip: "192.168.60.1"
+    vrid: 60
+  - vlan: 70
+    ifname: "svi-vlan70"
+    prefix: 27
+    real_ip: "192.168.70.30"
+    peer_ip: "192.168.70.29"
+    vip: "192.168.70.1"
+    vrid: 70
+  - vlan: 80
+    ifname: "svi-vlan80"
+    prefix: 27
+    real_ip: "192.168.80.30"
+    peer_ip: "192.168.80.29"
+    vip: "192.168.80.1"
+    vrid: 80
+  - vlan: 99
+    ifname: "svi-vlan99"
+    prefix: 27
+    real_ip: "192.168.99.12"
+    peer_ip: "192.168.99.11"
+    vip: "192.168.99.1"
+    vrid: 99

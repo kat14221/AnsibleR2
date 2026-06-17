@@ -1,0 +1,28 @@
+global_defs {
+  router_id {{ inventory_hostname }}
+}
+
+{% for svi in svis %}
+vrrp_instance VI_{{ svi.vrid }} {
+  state {{ vrrp_state }}
+  interface {{ svi.ifname }}
+  virtual_router_id {{ svi.vrid }}
+  priority {{ vrrp_priority }}
+  advert_int 1
+
+  authentication {
+    auth_type PASS
+    auth_pass {{ vrrp_auth_pass }}
+  }
+
+  unicast_src_ip {{ svi.real_ip }}
+  unicast_peer {
+    {{ svi.peer_ip }}
+  }
+
+  virtual_ipaddress {
+    {{ svi.vip }}/{{ svi.prefix }} dev {{ svi.ifname }}
+  }
+}
+
+{% endfor %}
