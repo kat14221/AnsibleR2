@@ -1,0 +1,80 @@
+---
+# =============================================================================
+# PLAYBOOK: 07_migrar_nobond_rstp_swcorelim1_local.yml
+# =============================================================================
+# FASE 4C — Migración Core1 de bonds a interfaces físicas con RSTP.
+#
+# EJECUTAR DENTRO de la VM SWCORELIM1:
+#
+#   cd ~/AnsibleR2/red-empresarial-lima-ansible
+#   git pull --rebase origin main
+#
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/07_migrar_nobond_rstp_swcorelim1_local.yml --syntax-check
+#
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/07_migrar_nobond_rstp_swcorelim1_local.yml -vv -K
+#
+# IMPORTANTE: Durante la migración, el enlace Core-Core puede interrumpirse
+# brevemente (el bond-pcsc1-sc2 se elimina antes de agregar ens36/ens37).
+# NO usar este playbook via SSH desde SWCORELIM2. Es un playbook local.
+#
+# keepalived debe estar DETENIDO antes de ejecutar.
+# =============================================================================
+
+- name: "FASE 4C | Migrar SWCORELIM1 — bonds a interfaces físicas con RSTP"
+  hosts: swcorelim1
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWCORELIM1"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swcorelim1"
+        fail_msg: >-
+          ERROR: Este playbook solo debe ejecutarse DENTRO de la VM SWCORELIM1.
+          Hostname detectado: {{ ansible_hostname }}.
+          Haz git pull dentro de SWCORELIM1 y ejecuta localmente.
+        success_msg: "OK: Ejecutando en SWCORELIM1 (hostname={{ ansible_hostname }})"
+      tags: always
+
+    - name: "SAFE | Verificar keepalived detenido"
+      ansible.builtin.command: "systemctl is-active keepalived"
+      changed_when: false
+      register: keepalived_state
+      failed_when: false
+      tags: always
+
+    - name: "SAFE | Advertir si keepalived está activo"
+      ansible.builtin.debug:
+        msg: >-
+          ⚠ ADVERTENCIA CRÍTICA: keepalived está ACTIVO en SWCORELIM1.
+          Debe estar detenido durante toda la Fase 4C para evitar VRRP flapping.
+          Ejecutar: sudo systemctl stop keepalived
+          Y verificar que también está detenido en SWCORELIM2 antes de continuar.
+      when: keepalived_state.stdout == "active"
+      tags: always
+
+    - name: "SAFE | Fallar si keepalived está activo"
+      ansible.builtin.assert:
+        that:
+          - keepalived_state.stdout != "active"
+        fail_msg: "ERROR: Detener keepalived antes de ejecutar Fase 4C. sudo systemctl stop keepalived"
+        success_msg: "OK: keepalived está detenido (estado={{ keepalived_state.stdout }})"
+      tags: always
+
+    - name: "PRECHECK | Mostrar resumen de variables FASE 4C"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          fase4c_enabled: "{{ fase4c_nobond_rstp_enabled }}"
+          bridge: "{{ fase4c_bridge }}"
+          priority: "{{ fase4c_rstp_priority }}"
+          rol_esperado: "{{ fase4c_expected_role }}"
+          bonds_a_eliminar: "{{ fase4c_deprecated_bonds | map(attribute='name') | list }}"
+          interfaces_a_agregar: "{{ fase4c_rstp_interfaces }}"
+      tags: always
+
+  roles:
+    - role: switching_l2_nobond_rstp_fase4c

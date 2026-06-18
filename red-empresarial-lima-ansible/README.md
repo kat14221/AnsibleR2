@@ -702,3 +702,105 @@ sudo ovs-vsctl set bridge br-acc rstp_enable=false
 > **Autor:** Proyecto Infraestructura Red Empresarial Lima
 > **Versión:** 1.2.0 | **Última actualización:** 2026-06-18
 
+---
+
+## Fase 4C — Migración a Enlaces Físicos (No-Bond RSTP)
+
+### Estado inicial requerido antes de aplicar Fase 4C
+
+> ⚠️ **`keepalived` debe permanecer DETENIDO en SWCORELIM1 y SWCORELIM2 durante toda esta fase.**
+
+Los enlaces hacia distribución pueden estar activos, pero se recomienda la siguiente secuencia para evitar bucles.
+
+### Causa de la Migración
+OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El bridge ignoraba el protocolo de redundancia, generando bucles L2. En la Fase 4C, se desmantelan los bonds y se usan los dos enlaces físicos como puertos OVS individuales administrados directamente por RSTP.
+
+### Paso 1 — Preparar y pushear desde Windows/OpenCode
+
+```bash
+git add roles/switching_l2_nobond_rstp_fase4c playbooks host_vars docs README.md
+git commit -m "fase4c migra bonds a enlaces fisicos rstp en ovs"
+git push
+```
+
+### Paso 2 — git pull en cada VM switch
+
+En cada VM (swcorelim1, swcorelim2, swdistlim1, swdistlim2, swacclim1, swacclim2):
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+git pull --rebase origin main
+```
+
+### Paso 3 — Aplicar Migración en Core
+
+> ⚠️ **NO USAR SSH desde SWCORELIM1 a SWCORELIM2**. El enlace Core-Core se interrumpirá durante la migración. Utiliza la consola de la VM (ESXi).
+
+**En SWCORELIM1:**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swcorelim1_local.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swcorelim1_local.yml -vv -K
+```
+
+**En SWCORELIM2 (Consola ESXi):**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swcorelim2_local.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swcorelim2_local.yml -vv -K
+```
+
+**Validar (Core):**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swcorelim1_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swcorelim2_local.yml -vv -K
+```
+
+### Paso 4 — Aplicar Migración en Distribución
+
+**En SWDISTLIM1:**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swdistlim1_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swdistlim1_local.yml -vv -K
+```
+
+**En SWDISTLIM2:**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swdistlim2_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swdistlim2_local.yml -vv -K
+```
+
+### Paso 5 — Aplicar Migración en Acceso
+
+**En SWACCLIM1:**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swacclim1_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swacclim1_local.yml -vv -K
+```
+
+**En SWACCLIM2:**
+```bash
+ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_swacclim2_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swacclim2_local.yml -vv -K
+```
+
+### Paso 6 — Verificaciones
+
+Después de migrar y reconectar todos los enlaces (esperar 60s), desde `SWCORELIM1` verificar que RSTP vea las interfaces y probar ping:
+
+```bash
+ping -c 30 10.255.21.2
+sudo ovs-appctl rstp/show br-core | sed -n '1,220p'
+```
+Y hacia las SVIs:
+```bash
+ping -I svi-vlan10 -c 10 192.168.10.126
+# (Ver requerimiento Fase 4C para lista completa de IPs)
+```
+Si la red L2 es estable (0% loss, sin DUP!), se puede preparar la **Fase 5 (VRRP balanceado)**.
+
+### Rollback (Manual)
+
+Si es necesario revertir:
+1. `sudo ovs-vsctl set bridge <bridge> rstp_enable=false`
+2. `sudo ovs-vsctl --if-exists del-port <bridge> ensXX`
+3. `sudo ovs-vsctl --may-exist add-bond <bridge> <bond> ensXX ensYY bond_mode=active-backup`
+4. Restaurar configuración OVS (`other_config`, etc). Ver README en rol `switching_l2_nobond_rstp_fase4c`.

@@ -1,0 +1,39 @@
+---
+# PLAYBOOK: 99_validar_nobond_rstp_swdistlim2_local.yml
+# FASE 4C — Validación RSTP en Dist2. Ejecutar DENTRO de SWDISTLIM2.
+
+- name: "FASE 4C | Validar estado RSTP en SWDISTLIM2"
+  hosts: swdistlim2
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: "VALIDAR | rstp_enable debe ser true"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} rstp_enable"
+      changed_when: false
+      register: rstp_enable
+
+    - name: "VALIDAR | Assert rstp_enable"
+      ansible.builtin.assert:
+        that: rstp_enable.stdout | trim == "true"
+        fail_msg: "RSTP no está habilitado en {{ fase4c_bridge }}"
+
+    - name: "VALIDAR | Prioridad configurada"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} other_config"
+      changed_when: false
+      register: rstp_config
+
+    - name: "VALIDAR | Assert prioridad"
+      ansible.builtin.assert:
+        that: "fase4c_rstp_priority | string in rstp_config.stdout"
+        fail_msg: "La prioridad no coincide con {{ fase4c_rstp_priority }}"
+
+    - name: "VALIDAR | ovs-appctl rstp/show"
+      ansible.builtin.command: "ovs-appctl rstp/show {{ fase4c_bridge }}"
+      changed_when: false
+      register: rstp_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar salida rstp/show"
+      ansible.builtin.debug:
+        msg: "{{ rstp_show.stdout_lines }}"

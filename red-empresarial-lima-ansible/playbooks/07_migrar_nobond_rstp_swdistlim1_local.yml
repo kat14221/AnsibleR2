@@ -1,0 +1,45 @@
+---
+# =============================================================================
+# PLAYBOOK: 07_migrar_nobond_rstp_swdistlim1_local.yml
+# =============================================================================
+# FASE 4C — Migración Dist1 de bonds a interfaces físicas con RSTP.
+# Ejecutar DENTRO de la VM SWDISTLIM1.
+#
+#   cd ~/AnsibleR2/red-empresarial-lima-ansible
+#   git pull --rebase origin main
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/07_migrar_nobond_rstp_swdistlim1_local.yml --syntax-check
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/07_migrar_nobond_rstp_swdistlim1_local.yml -vv -K
+#
+# Ejecutar DESPUÉS de que Core1 y Core2 estén migrados y validados.
+# =============================================================================
+
+- name: "FASE 4C | Migrar SWDISTLIM1 — bonds a interfaces físicas con RSTP"
+  hosts: swdistlim1
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWDISTLIM1"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swdistlim1"
+        fail_msg: >-
+          ERROR: Este playbook solo debe ejecutarse DENTRO de la VM SWDISTLIM1.
+          Hostname detectado: {{ ansible_hostname }}.
+        success_msg: "OK: Ejecutando en SWDISTLIM1 (hostname={{ ansible_hostname }})"
+      tags: always
+
+    - name: "PRECHECK | Mostrar resumen de variables FASE 4C"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          bridge: "{{ fase4c_bridge }}"
+          priority: "{{ fase4c_rstp_priority }}"
+          bonds_a_eliminar: "{{ fase4c_deprecated_bonds | map(attribute='name') | list }}"
+          interfaces_a_agregar: "{{ fase4c_rstp_interfaces }}"
+      tags: always
+
+  roles:
+    - role: switching_l2_nobond_rstp_fase4c

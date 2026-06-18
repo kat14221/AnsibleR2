@@ -148,3 +148,55 @@ rstp_path_costs:
 # Dejar vacío si no hay puertos de acceso L2 configurados en esta fase
 rstp_edge_ports: []
 
+
+# =============================================================================
+# FASE 4C — Migración No-Bond RSTP (switching_l2_nobond_rstp_fase4c)
+# =============================================================================
+fase4c_nobond_rstp_enabled: true
+fase4c_bridge: "br-dist"
+fase4c_rstp_priority: 16384         # Distribución primaria
+fase4c_expected_role: "distribution-primary"
+
+# Bonds actuales a eliminar del bridge br-dist
+fase4c_deprecated_bonds:
+  - name: bond-pcsc1-sd1
+    members: [ens34, ens37]
+    description: "Dist1 ↔ Core1 (uplink)"
+  - name: bond-pcsd1-sd2
+    members: [ens40, ens41]
+    description: "Dist1 ↔ Dist2 (lateral)"
+  - name: bond-pcsd1-sa1
+    members: [ens42, ens43]
+    description: "Dist1 ↔ Acc1"
+  - name: bond-pcsd1-sa2
+    members: [ens44, ens45]
+    description: "Dist1 ↔ Acc2"
+
+# Interfaces físicas a agregar como puertos OVS independientes con RSTP
+fase4c_rstp_interfaces:
+  - ens34    # Dist1 ↔ Core1 — enlace 1 (preferido)
+  - ens37    # Dist1 ↔ Core1 — enlace 2 (backup)
+  - ens40    # Dist1 ↔ Dist2 — enlace 1 (lateral preferido)
+  - ens41    # Dist1 ↔ Dist2 — enlace 2 (lateral backup)
+  - ens42    # Dist1 ↔ Acc1  — enlace 1 (preferido)
+  - ens43    # Dist1 ↔ Acc1  — enlace 2 (backup)
+  - ens44    # Dist1 ↔ Acc2  — enlace 1 (preferido)
+  - ens45    # Dist1 ↔ Acc2  — enlace 2 (backup)
+
+# Path costs:
+#   Uplinks a Core: 100/110 (preferidos)
+#   Laterales Dist↔Dist: 200/210 (desventajados — RSTP preferirá ir vía Core)
+#   Downlinks a Acc: 100/110
+fase4c_interface_costs:
+  ens34: 100    # Core1 enlace primario — Forwarding esperado
+  ens37: 110    # Core1 enlace backup — Discarding/Alternate esperado
+  ens40: 200    # Lateral Dist2 — desventajado (RSTP prefiere vía Core)
+  ens41: 210    # Lateral Dist2 backup — más desventajado
+  ens42: 100    # Acc1 enlace primario — Forwarding esperado
+  ens43: 110    # Acc1 enlace backup — Discarding/Alternate esperado
+  ens44: 100    # Acc2 enlace primario — Forwarding esperado
+  ens45: 110    # Acc2 enlace backup — Discarding/Alternate esperado
+
+# Sin hosts finales directamente en Distribución en esta fase
+fase4c_edge_interfaces: []
+

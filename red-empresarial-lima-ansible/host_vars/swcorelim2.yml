@@ -234,3 +234,39 @@ rstp_path_costs:
 # Puertos edge — no hay accesos directos de hosts finales en Core
 rstp_edge_ports: []
 
+
+# =============================================================================
+# FASE 4C — Migración No-Bond RSTP (switching_l2_nobond_rstp_fase4c)
+# =============================================================================
+fase4c_nobond_rstp_enabled: true
+fase4c_bridge: "br-core"
+fase4c_rstp_priority: 8192          # Root Bridge secundario
+fase4c_expected_role: "root-secondary"
+
+# Bonds actuales a eliminar del bridge br-core
+# NOTA: El script jhalex-swcorelim2-ovs.sh usa ens41 como primario en bond-pcsc2-sd2
+fase4c_deprecated_bonds:
+  - name: bond-pcsc1-sc2
+    members: [ens36, ens37]
+    description: "Core2 ↔ Core1"
+  - name: bond-pcsc2-sd2
+    members: [ens41, ens40]
+    description: "Core2 ↔ Dist2"
+
+# Interfaces físicas a agregar como puertos OVS independientes con RSTP
+fase4c_rstp_interfaces:
+  - ens36    # Core2 ↔ Core1 — enlace 1 (preferido)
+  - ens37    # Core2 ↔ Core1 — enlace 2 (backup)
+  - ens41    # Core2 ↔ Dist2 — enlace 1 (preferido, era primario en bond)
+  - ens40    # Core2 ↔ Dist2 — enlace 2 (backup)
+
+# Path costs: primer enlace del par=100, segundo=110
+fase4c_interface_costs:
+  ens36: 100    # Core-Core enlace primario — Forwarding esperado
+  ens37: 110    # Core-Core enlace backup — Discarding/Alternate esperado
+  ens41: 100    # Core-Dist2 enlace primario — Forwarding esperado
+  ens40: 110    # Core-Dist2 enlace backup — Discarding/Alternate esperado
+
+# Sin hosts finales directamente en Core
+fase4c_edge_interfaces: []
+

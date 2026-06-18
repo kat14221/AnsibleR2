@@ -145,3 +145,52 @@ rstp_path_costs:
 # Puertos edge — hosts finales — vacío en esta fase
 rstp_edge_ports: []
 
+
+# =============================================================================
+# FASE 4C — Migración No-Bond RSTP (switching_l2_nobond_rstp_fase4c)
+# =============================================================================
+fase4c_nobond_rstp_enabled: true
+fase4c_bridge: "br-dist"
+fase4c_rstp_priority: 20480         # Distribución secundaria
+fase4c_expected_role: "distribution-secondary"
+
+# Bonds actuales a eliminar del bridge br-dist
+fase4c_deprecated_bonds:
+  - name: bond-pcsc2-sd2
+    members: [ens36, ens37]
+    description: "Dist2 ↔ Core2 (uplink)"
+  - name: bond-pcsd1-sd2
+    members: [ens38, ens39]
+    description: "Dist2 ↔ Dist1 (lateral)"
+  - name: bond-pcsa1-sd2
+    members: [ens40, ens41]
+    description: "Dist2 ↔ Acc1"
+  - name: bond-pcsd2-sa2
+    members: [ens42, ens43]
+    description: "Dist2 ↔ Acc2"
+
+# Interfaces físicas a agregar como puertos OVS independientes con RSTP
+fase4c_rstp_interfaces:
+  - ens36    # Dist2 ↔ Core2 — enlace 1 (preferido)
+  - ens37    # Dist2 ↔ Core2 — enlace 2 (backup)
+  - ens38    # Dist2 ↔ Dist1 — enlace 1 (lateral preferido)
+  - ens39    # Dist2 ↔ Dist1 — enlace 2 (lateral backup)
+  - ens40    # Dist2 ↔ Acc1  — enlace 1 (preferido)
+  - ens41    # Dist2 ↔ Acc1  — enlace 2 (backup)
+  - ens42    # Dist2 ↔ Acc2  — enlace 1 (preferido)
+  - ens43    # Dist2 ↔ Acc2  — enlace 2 (backup)
+
+# Path costs
+fase4c_interface_costs:
+  ens36: 100    # Core2 enlace primario — Forwarding esperado
+  ens37: 110    # Core2 enlace backup — Discarding/Alternate esperado
+  ens38: 200    # Lateral Dist1 — desventajado (RSTP prefiere vía Core)
+  ens39: 210    # Lateral Dist1 backup — más desventajado
+  ens40: 100    # Acc1 enlace primario — Forwarding esperado
+  ens41: 110    # Acc1 enlace backup — Discarding/Alternate esperado
+  ens42: 100    # Acc2 enlace primario — Forwarding esperado
+  ens43: 110    # Acc2 enlace backup — Discarding/Alternate esperado
+
+# Sin hosts finales directamente en Distribución en esta fase
+fase4c_edge_interfaces: []
+

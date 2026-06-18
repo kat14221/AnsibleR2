@@ -1,0 +1,546 @@
+---
+# =============================================================================
+# TASKS — roles/switching_l2_nobond_rstp_fase4c
+# =============================================================================
+# FASE 4C: Migración de bonds inter-switch a enlaces físicos con RSTP.
+#
+# CAUSA RAÍZ:
+#   OVS 3.3.x emite "cannot enable RSTP on bonds, disabling" cuando un bond
+#   está presente en el bridge con rstp_enable=true. RSTP se desactiva
+#   silenciosamente en esos puertos → rstp/show tabla vacía → loops L2.
+#
+# SOLUCIÓN:
+#   1. Deshabilitar STP/RSTP en bridge
+#   2. Eliminar bonds del bridge (los miembros físicos siguen en el kernel)
+#   3. Agregar cada interfaz física como puerto OVS independiente
+#   4. Configurar RSTP en bridge con prioridad correcta
+#   5. Configurar rstp-port-admin-edge=false + path-cost en cada interfaz
+#   6. Habilitar rstp_enable=true (sin reiniciar OVS)
+#   7. Pausa 30s + validación
+#
+# NO reiniciar:
+#   openvswitch-switch, networking, systemd-networkd, la VM
+#
+# NO tocar:
+#   IP del bridge, SVIs, rutas, Keepalived, Netplan, OPNsense, RLIM1/2
+# =============================================================================
+
+
+# =============================================================================
+# BLOQUE 1 — PRECHECK
+# =============================================================================
+
+- name: "FASE4C PRECHECK | Validar guardia fase4c_nobond_rstp_enabled"
+  ansible.builtin.assert:
+    that:
+      - fase4c_nobond_rstp_enabled | bool
+    fail_msg: >-
+      ERROR: fase4c_nobond_rstp_enabled=false en host_vars/{{ inventory_hostname }}.yml.
+      Establece fase4c_nobond_rstp_enabled: true para habilitar este rol.
+    success_msg: "OK: fase4c_nobond_rstp_enabled=true en {{ inventory_hostname }}"
+  tags: always
+
+- name: "FASE4C PRECHECK | Validar variables obligatorias"
+  ansible.builtin.assert:
+    that:
+      - fase4c_bridge is defined
+      - fase4c_bridge | length > 0
+      - fase4c_rstp_priority is defined
+      - fase4c_rstp_priority | int > 0
+      - fase4c_deprecated_bonds is defined
+      - fase4c_rstp_interfaces is defined
+      - fase4c_rstp_interfaces | length > 0
+    fail_msg: >-
+      ERROR CRÍTICO: Variables faltantes en host_vars/{{ inventory_hostname }}.yml.
+      Requeridas: fase4c_bridge, fase4c_rstp_priority, fase4c_rstp_interfaces (no vacío).
+      bridge='{{ fase4c_bridge | default("NO_DEFINIDO") }}'
+      priority='{{ fase4c_rstp_priority | default("NO_DEFINIDO") }}'
+      interfaces={{ fase4c_rstp_interfaces | default([]) }}
+    success_msg: >-
+      OK: Variables validadas — bridge={{ fase4c_bridge }},
+      priority={{ fase4c_rstp_priority }},
+      interfaces={{ fase4c_rstp_interfaces | join(', ') }}
+  tags: always
+
+- name: "FASE4C PRECHECK | Verificar que el bridge {{ fase4c_bridge }} existe en OVS"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ fase4c_bridge }}"
+  changed_when: false
+  register: precheck_bridge_exists
+  failed_when: precheck_bridge_exists.rc != 0
+  tags: always
+
+- name: "FASE4C PRECHECK | Verificar existencia Linux de cada interfaz física"
+  ansible.builtin.command: "ip link show {{ item }}"
+  changed_when: false
+  register: precheck_iface_linux
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: precheck_iface_linux.rc != 0
+  tags: always
+
+- name: "FASE4C PRECHECK | Confirmar todas las interfaces físicas presentes en Linux"
+  ansible.builtin.debug:
+    msg: "OK: Interfaz {{ item.item }} existe en Linux en {{ inventory_hostname }}"
+  loop: "{{ precheck_iface_linux.results }}"
+  tags: always
+
+
+# =============================================================================
+# BLOQUE 2 — BACKUP ANTES DE MODIFICAR
+# =============================================================================
+
+- name: "FASE4C BACKUP | Crear directorio de backups Fase 4C"
+  ansible.builtin.file:
+    path: "/root/backups_fase4c"
+    state: directory
+    mode: "0700"
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Registrar timestamp"
+  ansible.builtin.set_fact:
+    fase4c_backup_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Guardar ovs-vsctl show"
+  ansible.builtin.shell: >-
+    ovs-vsctl show > /root/backups_fase4c/{{ inventory_hostname }}_{{ fase4c_backup_ts }}_ovs_show.txt 2>&1
+  changed_when: false
+  failed_when: false
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Guardar list-ports del bridge"
+  ansible.builtin.shell: >-
+    ovs-vsctl list-ports {{ fase4c_bridge }}
+    > /root/backups_fase4c/{{ inventory_hostname }}_{{ fase4c_backup_ts }}_ports.txt 2>&1
+  changed_when: false
+  failed_when: false
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Guardar list bridge"
+  ansible.builtin.shell: >-
+    ovs-vsctl list bridge {{ fase4c_bridge }}
+    > /root/backups_fase4c/{{ inventory_hostname }}_{{ fase4c_backup_ts }}_bridge.txt 2>&1
+  changed_when: false
+  failed_when: false
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Guardar ip -br addr"
+  ansible.builtin.shell: >-
+    ip -br addr
+    > /root/backups_fase4c/{{ inventory_hostname }}_{{ fase4c_backup_ts }}_ip_addr.txt 2>&1
+  changed_when: false
+  failed_when: false
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Guardar ip route"
+  ansible.builtin.shell: >-
+    ip route
+    > /root/backups_fase4c/{{ inventory_hostname }}_{{ fase4c_backup_ts }}_ip_route.txt 2>&1
+  changed_when: false
+  failed_when: false
+  tags: rstp_backup
+
+- name: "FASE4C BACKUP | Confirmar backup completado"
+  ansible.builtin.debug:
+    msg: "OK: Backup guardado en /root/backups_fase4c/ con timestamp {{ fase4c_backup_ts }}"
+  tags: rstp_backup
+
+
+# =============================================================================
+# BLOQUE 3 — DIAGNÓSTICO ANTES
+# =============================================================================
+
+- name: "FASE4C DIAG-ANTES | rstp_enable actual en {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} rstp_enable"
+  changed_when: false
+  register: diag_rstp_enable_before
+  tags: rstp_diag
+
+- name: "FASE4C DIAG-ANTES | other_config actual en {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} other_config"
+  changed_when: false
+  register: diag_other_config_before
+  tags: rstp_diag
+
+- name: "FASE4C DIAG-ANTES | Listar puertos actuales del bridge"
+  ansible.builtin.command: "ovs-vsctl list-ports {{ fase4c_bridge }}"
+  changed_when: false
+  register: diag_ports_before
+  tags: rstp_diag
+
+- name: "FASE4C DIAG-ANTES | ovs-appctl rstp/show antes"
+  ansible.builtin.command: "ovs-appctl rstp/show {{ fase4c_bridge }}"
+  changed_when: false
+  register: diag_rstp_show_before
+  failed_when: false
+  tags: rstp_diag
+
+- name: "FASE4C DIAG-ANTES | Mostrar estado previo completo"
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      bridge: "{{ fase4c_bridge }}"
+      rstp_enable_antes: "{{ diag_rstp_enable_before.stdout }}"
+      other_config_antes: "{{ diag_other_config_before.stdout }}"
+      puertos_antes: "{{ diag_ports_before.stdout_lines }}"
+      rstp_show_antes: "{{ diag_rstp_show_before.stdout_lines | default([]) }}"
+      bonds_a_eliminar: "{{ fase4c_deprecated_bonds | map(attribute='name') | list }}"
+      interfaces_a_agregar: "{{ fase4c_rstp_interfaces }}"
+      priority_objetivo: "{{ fase4c_rstp_priority }}"
+  tags: rstp_diag
+
+
+# =============================================================================
+# BLOQUE 4 — DESHABILITAR STP/RSTP (antes de modificar topología)
+# =============================================================================
+
+- name: "FASE4C DISABLE | Deshabilitar STP legado en {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ fase4c_bridge }} stp_enable=false"
+  changed_when: true
+  tags: rstp_disable
+
+- name: "FASE4C DISABLE | Deshabilitar RSTP en {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ fase4c_bridge }} rstp_enable=false"
+  changed_when: true
+  tags: rstp_disable
+
+- name: "FASE4C DISABLE | Limpiar other_config del bridge {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl clear bridge {{ fase4c_bridge }} other_config"
+  changed_when: true
+  tags: rstp_disable
+
+
+# =============================================================================
+# BLOQUE 5 — LIMPIAR CONFIGURACIÓN VIEJA DE BONDS
+# =============================================================================
+
+- name: "FASE4C BONDS | Limpiar other_config del bond {{ item.name }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item.name }} other_config"
+  changed_when: false
+  loop: "{{ fase4c_deprecated_bonds }}"
+  failed_when: false
+  tags: rstp_bonds
+
+- name: "FASE4C BONDS | Limpiar rstp_status del bond {{ item.name }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item.name }} rstp_status"
+  changed_when: false
+  loop: "{{ fase4c_deprecated_bonds }}"
+  failed_when: false
+  tags: rstp_bonds
+
+- name: "FASE4C BONDS | Limpiar rstp_statistics del bond {{ item.name }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item.name }} rstp_statistics"
+  changed_when: false
+  loop: "{{ fase4c_deprecated_bonds }}"
+  failed_when: false
+  tags: rstp_bonds
+
+
+# =============================================================================
+# BLOQUE 6 — ELIMINAR BONDS DEL BRIDGE
+# =============================================================================
+# IMPORTANTE: del-port elimina el bond del bridge OVSDB pero no borra las
+# interfaces físicas de Linux. Los cables físicos siguen activos.
+# =============================================================================
+
+- name: "FASE4C DEL-BOND | Eliminar bond {{ item.name }} del bridge {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists del-port {{ fase4c_bridge }} {{ item.name }}"
+  changed_when: true
+  loop: "{{ fase4c_deprecated_bonds }}"
+  failed_when: false
+  tags: rstp_bonds
+
+- name: "FASE4C DEL-BOND | Confirmar bonds eliminados"
+  ansible.builtin.debug:
+    msg: "OK: Bonds eliminados del bridge {{ fase4c_bridge }}: {{ fase4c_deprecated_bonds | map(attribute='name') | join(', ') }}"
+  tags: rstp_bonds
+
+
+# =============================================================================
+# BLOQUE 7 — LIMPIAR CONFIGURACIÓN OVS VIEJA EN INTERFACES FÍSICAS
+# =============================================================================
+
+- name: "FASE4C CLEAN-IFACE | Limpiar other_config en interfaz {{ item }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item }} other_config"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C CLEAN-IFACE | Limpiar tag en interfaz {{ item }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item }} tag"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C CLEAN-IFACE | Limpiar trunks en interfaz {{ item }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item }} trunks"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C CLEAN-IFACE | Limpiar vlan_mode en interfaz {{ item }}"
+  ansible.builtin.command: "ovs-vsctl --if-exists clear port {{ item }} vlan_mode"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+
+# =============================================================================
+# BLOQUE 8 — AGREGAR INTERFACES FÍSICAS COMO PUERTOS OVS INDEPENDIENTES
+# =============================================================================
+
+- name: "FASE4C ADD-PORT | Asegurar interfaz {{ item }} UP en Linux"
+  ansible.builtin.command: "ip link set {{ item }} up"
+  changed_when: true
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Agregar interfaz {{ item }} al bridge {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl --may-exist add-port {{ fase4c_bridge }} {{ item }}"
+  changed_when: true
+  loop: "{{ fase4c_rstp_interfaces }}"
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Limpiar tag post-add en {{ item }}"
+  ansible.builtin.command: "ovs-vsctl clear port {{ item }} tag"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Limpiar trunks post-add en {{ item }}"
+  ansible.builtin.command: "ovs-vsctl clear port {{ item }} trunks"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Limpiar vlan_mode post-add en {{ item }}"
+  ansible.builtin.command: "ovs-vsctl clear port {{ item }} vlan_mode"
+  changed_when: false
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Marcar interfaz {{ item }} como non-edge (RSTP participante)"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item }}
+    other_config:rstp-port-admin-edge=false
+  changed_when: true
+  loop: "{{ fase4c_rstp_interfaces }}"
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Marcar interfaz {{ item }} como non-auto-edge"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item }}
+    other_config:rstp-port-auto-edge=false
+  changed_when: true
+  loop: "{{ fase4c_rstp_interfaces }}"
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Configurar path cost en interfaz {{ item.key }}"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item.key }}
+    other_config:rstp-port-path-cost={{ item.value }}
+  changed_when: true
+  loop: "{{ fase4c_interface_costs | dict2items }}"
+  when: fase4c_interface_costs | length > 0
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Configurar edge ports como admin-edge=true (si existen)"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item }}
+    other_config:rstp-port-admin-edge=true
+    other_config:rstp-port-auto-edge=true
+  changed_when: true
+  loop: "{{ fase4c_edge_interfaces }}"
+  when: fase4c_edge_interfaces | length > 0
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Confirmar interfaces físicas agregadas al bridge"
+  ansible.builtin.debug:
+    msg: >-
+      OK: Interfaces físicas configuradas en {{ inventory_hostname }}/{{ fase4c_bridge }}:
+      {{ fase4c_rstp_interfaces | join(', ') }}
+  tags: rstp_ifaces
+
+
+# =============================================================================
+# BLOQUE 9 — ACTIVAR RSTP EN BRIDGE
+# =============================================================================
+
+- name: "FASE4C RSTP-ON | Configurar prioridad RSTP {{ fase4c_rstp_priority }} en {{ fase4c_bridge }}"
+  ansible.builtin.command: >-
+    ovs-vsctl set bridge {{ fase4c_bridge }}
+    other_config:rstp-priority={{ fase4c_rstp_priority }}
+  changed_when: true
+  tags: rstp_enable
+
+- name: "FASE4C RSTP-ON | Habilitar RSTP en bridge {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ fase4c_bridge }} rstp_enable=true"
+  changed_when: true
+  tags: rstp_enable
+
+- name: "FASE4C RSTP-ON | Confirmar RSTP habilitado"
+  ansible.builtin.debug:
+    msg: >-
+      OK: RSTP habilitado en {{ inventory_hostname }}/{{ fase4c_bridge }}
+      con prioridad={{ fase4c_rstp_priority }}, rol={{ fase4c_expected_role }}.
+      NO se reiniciará openvswitch-switch.
+  tags: rstp_enable
+
+
+# =============================================================================
+# BLOQUE 10 — PAUSA PARA CONVERGENCIA RSTP
+# =============================================================================
+# NO reiniciar openvswitch-switch — ver nota en defaults/main.yml
+# =============================================================================
+
+- name: "FASE4C WAIT | Esperar convergencia RSTP (30 segundos)"
+  ansible.builtin.pause:
+    seconds: 30
+  tags: rstp_wait
+
+- name: "FASE4C WAIT | Verificar que el bridge {{ fase4c_bridge }} sigue activo"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ fase4c_bridge }}"
+  changed_when: false
+  register: post_wait_bridge_check
+  failed_when: post_wait_bridge_check.rc != 0
+  tags: rstp_wait
+
+
+# =============================================================================
+# BLOQUE 11 — VALIDACIÓN POSTERIOR
+# =============================================================================
+
+- name: "FASE4C VALIDAR | Obtener rstp_enable final en {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} rstp_enable"
+  changed_when: false
+  register: val_rstp_enable_after
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Obtener other_config final en {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} other_config"
+  changed_when: false
+  register: val_rstp_config_after
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Listar puertos finales del bridge"
+  ansible.builtin.command: "ovs-vsctl list-ports {{ fase4c_bridge }}"
+  changed_when: false
+  register: val_ports_after
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Assert — rstp_enable=true aplicado"
+  ansible.builtin.assert:
+    that:
+      - val_rstp_enable_after.stdout | trim == "true"
+    fail_msg: >-
+      ERROR CRÍTICO: rstp_enable NO quedó en 'true' en {{ fase4c_bridge }}
+      de {{ inventory_hostname }}. Valor actual: '{{ val_rstp_enable_after.stdout }}'.
+      Verificar que el script de arranque OVS no está sobreescribiendo la configuración.
+    success_msg: "PASS: rstp_enable=true confirmado en {{ inventory_hostname }}/{{ fase4c_bridge }}"
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Assert — prioridad {{ fase4c_rstp_priority }} en other_config"
+  ansible.builtin.assert:
+    that:
+      - fase4c_rstp_priority | string in val_rstp_config_after.stdout
+    fail_msg: >-
+      ERROR: Prioridad {{ fase4c_rstp_priority }} NO en other_config de
+      {{ inventory_hostname }}/{{ fase4c_bridge }}.
+      Valor actual: '{{ val_rstp_config_after.stdout }}'
+    success_msg: "PASS: rstp-priority={{ fase4c_rstp_priority }} confirmado en {{ inventory_hostname }}"
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Assert — bonds antiguos NO deben estar en list-ports"
+  ansible.builtin.assert:
+    that:
+      - item.name not in val_ports_after.stdout_lines
+    fail_msg: >-
+      ERROR: Bond antiguo '{{ item.name }}' TODAVÍA aparece en list-ports de
+      {{ fase4c_bridge }} en {{ inventory_hostname }}.
+      Puertos actuales: {{ val_ports_after.stdout_lines }}
+    success_msg: "PASS: Bond '{{ item.name }}' correctamente eliminado del bridge"
+  loop: "{{ fase4c_deprecated_bonds }}"
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Assert — interfaces físicas DEBEN estar en list-ports"
+  ansible.builtin.assert:
+    that:
+      - item in val_ports_after.stdout_lines
+    fail_msg: >-
+      ERROR: Interfaz física '{{ item }}' NO aparece en list-ports de
+      {{ fase4c_bridge }} en {{ inventory_hostname }}.
+      Puertos actuales: {{ val_ports_after.stdout_lines }}
+    success_msg: "PASS: Interfaz '{{ item }}' presente en bridge {{ fase4c_bridge }}"
+  loop: "{{ fase4c_rstp_interfaces }}"
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | ovs-appctl rstp/show {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-appctl rstp/show {{ fase4c_bridge }}"
+  changed_when: false
+  register: val_rstp_show_after
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | ovs-ofctl show {{ fase4c_bridge }}"
+  ansible.builtin.command: "ovs-ofctl show {{ fase4c_bridge }}"
+  changed_when: false
+  register: val_ofctl_after
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Verificar estado link de cada interfaz física"
+  ansible.builtin.command: "ip link show {{ item }}"
+  changed_when: false
+  register: val_link_state
+  loop: "{{ fase4c_rstp_interfaces }}"
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Advertencia si alguna interfaz está DOWN"
+  ansible.builtin.debug:
+    msg: >-
+      ⚠ ADVERTENCIA: La interfaz {{ item.item }} puede estar DOWN en
+      {{ inventory_hostname }}. Esto es esperado si el cable hacia el switch
+      vecino aún no está activo. RSTP la incluirá cuando el enlace suba.
+      Estado: {{ item.stdout | default('no disponible') }}
+  loop: "{{ val_link_state.results }}"
+  when: "'state DOWN' in (item.stdout | default(''))"
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Mostrar estado RSTP final completo"
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      bridge: "{{ fase4c_bridge }}"
+      rstp_enable_final: "{{ val_rstp_enable_after.stdout }}"
+      other_config_final: "{{ val_rstp_config_after.stdout }}"
+      puertos_finales: "{{ val_ports_after.stdout_lines }}"
+      rstp_show_final: "{{ val_rstp_show_after.stdout_lines | default([]) }}"
+      rol_esperado: "{{ fase4c_expected_role }}"
+      prioridad_aplicada: "{{ fase4c_rstp_priority }}"
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | ADVERTENCIA si rstp/show sigue mostrando tabla vacía"
+  ansible.builtin.debug:
+    msg: >-
+      ⚠ ADVERTENCIA: rstp/show {{ fase4c_bridge }} en {{ inventory_hostname }}
+      muestra tabla de interfaces vacía o incompleta.
+      Esto puede ser normal si los enlaces inter-switch están DOWN todavía.
+      Con los enlaces activos, RSTP debería listar las interfaces físicas con
+      roles: Designated, Root, o Alternate.
+      VERIFICAR: sudo ovs-appctl rstp/show {{ fase4c_bridge }}
+      Si la tabla sigue vacía con enlaces activos, confirmar que las interfaces
+      tienen other_config:rstp-port-admin-edge=false correctamente aplicado.
+  when: >-
+    val_rstp_show_after.stdout is not defined or
+    (val_rstp_show_after.stdout | trim | length == 0) or
+    ('-------' not in val_rstp_show_after.stdout and
+     val_rstp_show_after.stdout_lines | default([]) | length < 5)
+  tags: rstp_validate

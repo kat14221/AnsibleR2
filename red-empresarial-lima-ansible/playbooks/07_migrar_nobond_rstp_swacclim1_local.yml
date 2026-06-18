@@ -1,0 +1,39 @@
+---
+# PLAYBOOK: 07_migrar_nobond_rstp_swacclim1_local.yml
+# FASE 4C — Migración Acc1. Ejecutar DENTRO de la VM SWACCLIM1.
+#
+#   cd ~/AnsibleR2/red-empresarial-lima-ansible
+#   git pull --rebase origin main
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/07_migrar_nobond_rstp_swacclim1_local.yml --syntax-check
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/07_migrar_nobond_rstp_swacclim1_local.yml -vv -K
+
+- name: "FASE 4C | Migrar SWACCLIM1 — bonds a interfaces físicas con RSTP"
+  hosts: swacclim1
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWACCLIM1"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swacclim1"
+        fail_msg: >-
+          ERROR: Este playbook solo debe ejecutarse DENTRO de la VM SWACCLIM1.
+          Hostname detectado: {{ ansible_hostname }}.
+        success_msg: "OK: Ejecutando en SWACCLIM1 (hostname={{ ansible_hostname }})"
+      tags: always
+
+    - name: "PRECHECK | Mostrar resumen de variables FASE 4C"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          bridge: "{{ fase4c_bridge }}"
+          priority: "{{ fase4c_rstp_priority }}"
+          bonds_a_eliminar: "{{ fase4c_deprecated_bonds | map(attribute='name') | list }}"
+          interfaces_a_agregar: "{{ fase4c_rstp_interfaces }}"
+      tags: always
+
+  roles:
+    - role: switching_l2_nobond_rstp_fase4c
