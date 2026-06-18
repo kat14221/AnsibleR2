@@ -16,8 +16,15 @@
 #   2. Diagnóstico ANTES — capturar estado previo completo
 #   3. Limpieza controlada — limpiar solo config STP/RSTP
 #   4. Reaplicar RSTP — bridge + puertos inter-switch + edge ports
-#   5. Reinicio controlado de openvswitch-switch
+#   5. Pausa de convergencia RSTP (sin reiniciar OVS)
 #   6. Validación posterior — asserts y advertencias
+#
+# IMPORTANTE — NO REINICIAR openvswitch-switch:
+#   En este laboratorio, reiniciar openvswitch-switch hace que el bridge
+#   se recree desde la configuración OVSDB persistida. Si el servicio OVS
+#   o el script de arranque no persiste rstp_enable=true, el bridge vuelve
+#   a rstp_enable=false, invalidando la configuración recién aplicada.
+#   Por eso el BLOQUE 5 usa solo pause, no systemctl restart.
 #
 # NO toca:
 #   tag, trunks, vlan_mode, interfaces, bond_mode, bond-primary
@@ -283,31 +290,32 @@
 
 
 # =============================================================================
-# BLOQUE 5 — REINICIO CONTROLADO DE OPENVSWITCH
+# BLOQUE 5 — PAUSA DE CONVERGENCIA RSTP (SIN REINICIAR OVS)
+# =============================================================================
+# NOTA CRÍTICA: NO se reinicia openvswitch-switch.
+# Motivo: en este laboratorio el restart de OVS recrea los bridges desde la
+# configuración OVSDB/startup, lo que puede devolver rstp_enable a 'false'.
+# La configuración aplicada por ovs-vsctl es inmediata y persistente en la
+# base de datos OVSDB — no requiere reinicio del servicio para ser efectiva.
+# Solo se necesita tiempo para que el protocolo RSTP converja.
 # =============================================================================
 
-- name: "FASE4B RESTART | Reiniciar openvswitch-switch para aplicar configuración RSTP"
-  ansible.builtin.systemd:
-    name: openvswitch-switch
-    state: restarted
-  tags: rstp_restart
-
-- name: "FASE4B RESTART | Esperar estabilización de OVS y RSTP (15 segundos)"
+- name: "FASE4B WAIT | Esperar convergencia RSTP sin reiniciar OVS (30 segundos)"
   ansible.builtin.pause:
-    seconds: 15
-  tags: rstp_restart
+    seconds: 30
+  tags: rstp_wait
 
-- name: "FASE4B RESTART | Verificar que el bridge {{ rstp_bridge }} existe tras reinicio"
+- name: "FASE4B WAIT | Verificar que el bridge {{ rstp_bridge }} sigue activo"
   ansible.builtin.command: "ovs-vsctl br-exists {{ rstp_bridge }}"
   changed_when: false
-  register: post_restart_bridge_check
-  failed_when: post_restart_bridge_check.rc != 0
-  tags: rstp_restart
+  register: post_wait_bridge_check
+  failed_when: post_wait_bridge_check.rc != 0
+  tags: rstp_wait
 
-- name: "FASE4B RESTART | Bridge confirmado tras reinicio"
+- name: "FASE4B WAIT | Bridge confirmado activo tras pausa"
   ansible.builtin.debug:
-    msg: "OK: Bridge {{ rstp_bridge }} existe y OVS está activo en {{ inventory_hostname }}"
-  tags: rstp_restart
+    msg: "OK: Bridge {{ rstp_bridge }} sigue activo en {{ inventory_hostname }} tras pausa de convergencia"
+  tags: rstp_wait
 
 
 # =============================================================================
@@ -332,8 +340,9 @@
       - val_rstp_enable_after.stdout | trim == "true"
     fail_msg: >-
       ERROR CRÍTICO: rstp_enable NO quedó en 'true' en {{ rstp_bridge }}
-      de {{ inventory_hostname }} tras el reinicio.
-      Valor actual: '{{ val_rstp_enable_after.stdout }}'
+      de {{ inventory_hostname }}. Valor actual: '{{ val_rstp_enable_after.stdout }}'.
+      Verificar: ovs-vsctl set bridge {{ rstp_bridge }} rstp_enable=true
+      y que el script de arranque OVS no esté sobreescribiendo la configuración.
     success_msg: "PASS: rstp_enable=true confirmado en {{ inventory_hostname }}/{{ rstp_bridge }}"
   tags: rstp_validate
 

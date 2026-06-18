@@ -26,9 +26,21 @@ ovs-vsctl set port <bond> other_config:rstp-port-auto-edge=false
 2. DIAG-ANTES    — Capturar estado completo antes de tocar nada
 3. LIMPIEZA      — Limpiar solo config STP/RSTP (no toca bonds, VLANs, IPs)
 4. APLICAR       — Habilitar RSTP + prioridad + configurar puertos inter-switch
-5. RESTART       — systemctl restart openvswitch-switch + pausa 15s
+5. WAIT          — Pausa 30s para convergencia RSTP (SIN reiniciar OVS)
 6. VALIDAR       — Asserts + advertencia si rstp/show sigue vacío
 ```
+
+> [!IMPORTANT]
+> **NO se reinicia `openvswitch-switch` durante FASE 4B.**
+> En este laboratorio, reiniciar el servicio OVS hace que el bridge se recree
+> desde la configuración OVSDB/startup del sistema. Si el script de arranque
+> (`jhalex-swcorelim1-ovs.service`, etc.) no incluye `rstp_enable=true`,
+> el bridge vuelve a `rstp_enable=false`, invalidando la configuración recién aplicada.
+>
+> La configuración aplicada por `ovs-vsctl` es inmediata y persistente en la base de
+> datos OVSDB — **no requiere reinicio del servicio** para ser efectiva.
+> Solo se necesita tiempo para que el protocolo RSTP converja.
+
 
 ## Variables requeridas en host_vars
 
@@ -88,7 +100,7 @@ rstp_edge_ports: []
 | Configura prioridad bridge | ✅ | ✅ |
 | Configura puertos inter-switch | ❌ | ✅ |
 | Limpieza previa | ❌ | ✅ |
-| Restart OVS controlado | ❌ | ✅ |
+| Reinicia OVS | ❌ | ⛔ Intencional — ver IMPORTANTE arriba |
 | Validación con asserts | Básica | Completa |
 | Detecta tabla rstp/show vacía | ❌ | ✅ (advertencia) |
 
