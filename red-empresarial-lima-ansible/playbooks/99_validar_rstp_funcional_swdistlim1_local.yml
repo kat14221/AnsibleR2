@@ -1,0 +1,113 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_rstp_funcional_swdistlim1_local.yml
+# =============================================================================
+# FASE 4B — Validación RSTP funcional en SWDISTLIM1
+#
+# Solo lectura — NO modifica nada.
+# Ejecutar DENTRO de la VM SWDISTLIM1:
+#
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rstp_funcional_swdistlim1_local.yml -vv -K
+# =============================================================================
+
+- name: "VALIDAR FASE 4B RSTP | SWDISTLIM1"
+  hosts: swdistlim1
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: "SAFE | Confirmar VM correcta"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swdistlim1"
+        fail_msg: "ERROR: Este playbook solo debe ejecutarse dentro de SWDISTLIM1."
+        success_msg: "OK: Ejecutando en SWDISTLIM1"
+
+    - name: "VALIDAR | Cargar host_vars para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+
+    - name: "VALIDAR | rstp_enable en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+      changed_when: false
+      register: val_rstp_enable
+
+    - name: "VALIDAR | Assert — rstp_enable=true"
+      ansible.builtin.assert:
+        that:
+          - val_rstp_enable.stdout | trim == "true"
+        fail_msg: "FAIL: rstp_enable NO es true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+        success_msg: "PASS: rstp_enable=true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+
+    - name: "VALIDAR | other_config en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+      changed_when: false
+      register: val_rstp_config
+
+    - name: "VALIDAR | Mostrar other_config"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          other_config: "{{ val_rstp_config.stdout }}"
+          prioridad_esperada: "{{ rstp_priority }}"
+
+    - name: "VALIDAR | Assert — prioridad {{ rstp_priority }} en other_config"
+      ansible.builtin.assert:
+        that:
+          - rstp_priority | string in val_rstp_config.stdout
+        fail_msg: "FAIL: Prioridad {{ rstp_priority }} NO en other_config de {{ inventory_hostname }}"
+        success_msg: "PASS: rstp-priority={{ rstp_priority }} confirmado en {{ inventory_hostname }}"
+
+    - name: "VALIDAR | Verificar puerto inter-switch {{ item }}"
+      ansible.builtin.command: "ovs-vsctl list port {{ item }}"
+      changed_when: false
+      register: val_port_exists
+      loop: "{{ rstp_inter_switch_ports }}"
+      failed_when: val_port_exists.rc != 0
+
+    - name: "VALIDAR | Obtener other_config de puerto {{ item }}"
+      ansible.builtin.command: "ovs-vsctl get port {{ item }} other_config"
+      changed_when: false
+      register: val_port_config
+      loop: "{{ rstp_inter_switch_ports }}"
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar other_config por puerto"
+      ansible.builtin.debug:
+        msg:
+          puerto: "{{ item.item }}"
+          other_config: "{{ item.stdout }}"
+      loop: "{{ val_port_config.results }}"
+
+    - name: "VALIDAR | ovs-appctl rstp/show {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+      changed_when: false
+      register: val_rstp_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar rstp/show"
+      ansible.builtin.debug:
+        msg: "{{ val_rstp_show.stdout_lines | default([]) }}"
+
+    - name: "VALIDAR | ADVERTENCIA si tabla rstp/show parece vacía"
+      ansible.builtin.debug:
+        msg: >-
+          ⚠ ADVERTENCIA: rstp/show en {{ inventory_hostname }}/{{ rstp_bridge }}
+          muestra tabla vacía o incompleta. Verificar con:
+          sudo ovs-appctl rstp/show {{ rstp_bridge }}
+      when: >-
+        val_rstp_show.stdout is not defined or
+        (val_rstp_show.stdout | trim | length == 0) or
+        ('-------' not in val_rstp_show.stdout and
+         val_rstp_show.stdout_lines | default([]) | length < 5)
+
+    - name: "VALIDAR | ovs-ofctl show {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-ofctl show {{ rstp_bridge }}"
+      changed_when: false
+      register: val_ofctl_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar ovs-ofctl show"
+      ansible.builtin.debug:
+        msg: "{{ val_ofctl_show.stdout_lines | default([]) }}"

@@ -1,0 +1,55 @@
+---
+# =============================================================================
+# PLAYBOOK: 06_clean_reapply_rstp_core.yml
+# =============================================================================
+# FASE 4B — Limpieza y reaplicación RSTP funcional en Core Lima
+#
+# Ejecutar desde SWCORELIM1 (tiene llave SSH hacia SWCORELIM2):
+#
+#   cd ~/AnsibleR2/red-empresarial-lima-ansible
+#   git pull --rebase origin main
+#
+#   # Syntax check primero — no modifica nada
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/06_clean_reapply_rstp_core.yml --syntax-check
+#
+#   # Aplicar con verbose y sudo password
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/06_clean_reapply_rstp_core.yml -vv -K
+#
+# NOTAS CRÍTICAS:
+#   - NO usar -k. La llave SSH a SWCORELIM2 ya está configurada.
+#   - Usar -K para introducir el password de sudo.
+#   - keepalived DEBE estar detenido en ambos Core antes de ejecutar.
+#   - Este playbook aplica primero SWCORELIM1 (serial: 1) y luego SWCORELIM2.
+#   - No reiniciar las VMs — solo se reinicia openvswitch-switch.
+#   - Verificar con 99_validar_rstp_funcional_core.yml después.
+# =============================================================================
+
+- name: "FASE 4B | Clean + Reapply RSTP Core Lima"
+  hosts: swcorelim1:swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  pre_tasks:
+    - name: "PRECHECK | Cargar host_vars para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Mostrar resumen de variables FASE 4B en {{ inventory_hostname }}"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          l2_clean_rstp_enabled: "{{ l2_clean_rstp_enabled | default('NO_DEFINIDO') }}"
+          rstp_bridge: "{{ rstp_bridge | default('NO_DEFINIDO') }}"
+          rstp_priority: "{{ rstp_priority | default('NO_DEFINIDO') }}"
+          rstp_expected_role: "{{ rstp_expected_role | default('NO_DEFINIDO') }}"
+          rstp_inter_switch_ports: "{{ rstp_inter_switch_ports | default([]) }}"
+          rstp_path_costs: "{{ rstp_path_costs | default({}) }}"
+          rstp_edge_ports: "{{ rstp_edge_ports | default([]) }}"
+      tags: always
+
+  roles:
+    - role: switching_l2_clean_rstp_fase4b

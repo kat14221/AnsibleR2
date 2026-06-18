@@ -1,0 +1,61 @@
+---
+# =============================================================================
+# PLAYBOOK: 06_clean_reapply_rstp_swacclim1_local.yml
+# =============================================================================
+# FASE 4B — Limpieza y reaplicación RSTP funcional en SWACCLIM1
+#
+# Ejecutar DENTRO de la VM SWACCLIM1 (no desde SWCORELIM1):
+#
+#   cd ~/AnsibleR2/red-empresarial-lima-ansible
+#   git pull --rebase origin main
+#
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/06_clean_reapply_rstp_swacclim1_local.yml --syntax-check
+#
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/06_clean_reapply_rstp_swacclim1_local.yml -vv -K
+#
+# SEGURIDAD:
+#   Si ansible_hostname != swacclim1, el playbook aborta ANTES de hacer cambios.
+#
+# VALIDAR DESPUÉS con:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rstp_funcional_swacclim1_local.yml -vv -K
+# =============================================================================
+
+- name: "FASE 4B | Clean + Reapply RSTP local en SWACCLIM1"
+  hosts: swacclim1
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWACCLIM1"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swacclim1"
+        fail_msg: >-
+          ERROR: Este playbook solo debe ejecutarse DENTRO de la VM SWACCLIM1.
+          Hostname detectado: {{ ansible_hostname }}.
+          Asegúrate de hacer git pull dentro de SWACCLIM1 y ejecutar localmente.
+        success_msg: "OK: Ejecutando en SWACCLIM1 (ansible_hostname={{ ansible_hostname }})"
+      tags: always
+
+    - name: "PRECHECK | Cargar host_vars para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Mostrar resumen de variables FASE 4B"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          l2_clean_rstp_enabled: "{{ l2_clean_rstp_enabled | default('NO_DEFINIDO') }}"
+          rstp_bridge: "{{ rstp_bridge | default('NO_DEFINIDO') }}"
+          rstp_priority: "{{ rstp_priority | default('NO_DEFINIDO') }}"
+          rstp_expected_role: "{{ rstp_expected_role | default('NO_DEFINIDO') }}"
+          rstp_inter_switch_ports: "{{ rstp_inter_switch_ports | default([]) }}"
+          rstp_path_costs: "{{ rstp_path_costs | default({}) }}"
+      tags: always
+
+  roles:
+    - role: switching_l2_clean_rstp_fase4b

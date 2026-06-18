@@ -108,3 +108,25 @@ rstp_bridge: "br-acc"
 rstp_priority: 36864         # Acceso — nunca root, prioridad menor que swacclim1
 rstp_expected_role: "access"
 
+# -----------------------------------------------------------------------------
+# FASE 4B — Clean RSTP funcional (switching_l2_clean_rstp_fase4b)
+# -----------------------------------------------------------------------------
+# Guardia principal — DEBE ser true para ejecutar el rol Fase 4B
+l2_clean_rstp_enabled: true
+
+# Bonds inter-switch que participan en RSTP
+# SWACCLIM2: Access2 ↔ Dist1 | Access2 ↔ Dist2
+rstp_inter_switch_ports:
+  - bond-pcsd1-sa2    # Access2 ↔ Dist1 (uplink hacia Dist1)
+  - bond-pcsd2-sa2    # Access2 ↔ Dist2 (uplink primario hacia Dist2)
+
+# Path costs por puerto
+# bond-pcsd1-sa2 tiene costo 200 para preferir el camino directo hacia Dist2
+# Espejo de swacclim1 pero invertido: Acc2 prefiere Dist2, Acc1 prefiere Dist1
+rstp_path_costs:
+  bond-pcsd1-sa2: 200    # Uplink a Dist1 — redundante (mayor costo)
+  bond-pcsd2-sa2: 100    # Uplink a Dist2 — preferido
+
+# Puertos edge — hosts finales — vacío en esta fase
+rstp_edge_ports: []
+

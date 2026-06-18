@@ -1,0 +1,176 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_rstp_funcional_core.yml
+# =============================================================================
+# FASE 4B — Validación completa de RSTP funcional en Core Lima
+#
+# Solo lectura — NO modifica nada.
+#
+# Ejecutar desde SWCORELIM1:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rstp_funcional_core.yml -vv -K
+#
+# Valida:
+#   1. rstp_enable = true en br-core
+#   2. Prioridad RSTP correcta en other_config
+#   3. Todos los puertos inter-switch existen en OVS
+#   4. other_config de cada puerto (admin-edge y path-cost)
+#   5. ovs-appctl rstp/show (muestra estado y advierte si tabla vacía)
+#   6. ovs-ofctl show br-core
+#   7. Ping 30 paquetes Core-Core 10.255.21.2 (solo desde swcorelim1)
+# =============================================================================
+
+- name: "VALIDAR FASE 4B RSTP | Core Lima — SWCORELIM1 y SWCORELIM2"
+  hosts: swcorelim1:swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  tasks:
+    - name: "VALIDAR | Cargar host_vars para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+
+    # -------------------------------------------------------------------------
+    # 1. rstp_enable
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Obtener rstp_enable en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+      changed_when: false
+      register: val_rstp_enable
+
+    - name: "VALIDAR | Assert — rstp_enable=true"
+      ansible.builtin.assert:
+        that:
+          - val_rstp_enable.stdout | trim == "true"
+        fail_msg: >-
+          FAIL: rstp_enable NO está en 'true' en {{ inventory_hostname }}/{{ rstp_bridge }}.
+          Valor actual: '{{ val_rstp_enable.stdout }}'.
+          Ejecutar: 06_clean_reapply_rstp_core.yml para corregir.
+        success_msg: "PASS: rstp_enable=true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+
+    # -------------------------------------------------------------------------
+    # 2. Prioridad RSTP
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Obtener other_config en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+      changed_when: false
+      register: val_rstp_config
+
+    - name: "VALIDAR | Mostrar other_config"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          bridge: "{{ rstp_bridge }}"
+          other_config: "{{ val_rstp_config.stdout }}"
+          prioridad_esperada: "{{ rstp_priority }}"
+          rol_esperado: "{{ rstp_expected_role }}"
+
+    - name: "VALIDAR | Assert — prioridad {{ rstp_priority }} en other_config"
+      ansible.builtin.assert:
+        that:
+          - rstp_priority | string in val_rstp_config.stdout
+        fail_msg: >-
+          FAIL: Prioridad {{ rstp_priority }} NO aparece en other_config de
+          {{ inventory_hostname }}/{{ rstp_bridge }}.
+          Valor actual: '{{ val_rstp_config.stdout }}'
+        success_msg: "PASS: rstp-priority={{ rstp_priority }} confirmado en {{ inventory_hostname }}"
+
+    # -------------------------------------------------------------------------
+    # 3. Verificar puertos inter-switch
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Verificar que puerto inter-switch {{ item }} existe en OVS"
+      ansible.builtin.command: "ovs-vsctl list port {{ item }}"
+      changed_when: false
+      register: val_port_exists
+      loop: "{{ rstp_inter_switch_ports }}"
+      failed_when: val_port_exists.rc != 0
+
+    - name: "VALIDAR | PASS — Todos los puertos inter-switch existen"
+      ansible.builtin.debug:
+        msg: "PASS: Puertos inter-switch verificados en {{ inventory_hostname }}: {{ rstp_inter_switch_ports | join(', ') }}"
+
+    # -------------------------------------------------------------------------
+    # 4. other_config de cada puerto inter-switch
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Obtener other_config de puerto {{ item }}"
+      ansible.builtin.command: "ovs-vsctl get port {{ item }} other_config"
+      changed_when: false
+      register: val_port_config
+      loop: "{{ rstp_inter_switch_ports }}"
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar other_config por puerto inter-switch"
+      ansible.builtin.debug:
+        msg:
+          puerto: "{{ item.item }}"
+          other_config: "{{ item.stdout }}"
+          tiene_admin_edge_false: "{{ 'rstp-port-admin-edge' in item.stdout }}"
+      loop: "{{ val_port_config.results }}"
+
+    # -------------------------------------------------------------------------
+    # 5. ovs-appctl rstp/show
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | ovs-appctl rstp/show {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+      changed_when: false
+      register: val_rstp_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar estado RSTP completo"
+      ansible.builtin.debug:
+        msg: "{{ val_rstp_show.stdout_lines | default([]) }}"
+
+    - name: "VALIDAR | ADVERTENCIA si tabla rstp/show parece vacía"
+      ansible.builtin.debug:
+        msg: >-
+          ⚠ ADVERTENCIA: rstp/show en {{ inventory_hostname }}/{{ rstp_bridge }}
+          muestra tabla de interfaces vacía o incompleta.
+          Con los enlaces inter-switch UP, debería mostrar puertos con roles
+          (Designated, Root, Alternate). Verificar manualmente con:
+          sudo ovs-appctl rstp/show {{ rstp_bridge }}
+      when: >-
+        val_rstp_show.stdout is not defined or
+        (val_rstp_show.stdout | trim | length == 0) or
+        ('-------' not in val_rstp_show.stdout and
+         val_rstp_show.stdout_lines | default([]) | length < 5)
+
+    # -------------------------------------------------------------------------
+    # 6. ovs-ofctl show
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | ovs-ofctl show {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-ofctl show {{ rstp_bridge }}"
+      changed_when: false
+      register: val_ofctl_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar ovs-ofctl show"
+      ansible.builtin.debug:
+        msg: "{{ val_ofctl_show.stdout_lines | default([]) }}"
+
+    # -------------------------------------------------------------------------
+    # 7. Ping Core-Core — 30 paquetes (solo desde swcorelim1)
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Ping Core-Core 30 paquetes → 10.255.21.2 (solo desde swcorelim1)"
+      ansible.builtin.command: "ping -c 30 -W 2 10.255.21.2"
+      changed_when: false
+      register: val_ping_core
+      failed_when: false
+      when: inventory_hostname == "swcorelim1"
+
+    - name: "VALIDAR | Mostrar resultado ping Core-Core"
+      ansible.builtin.debug:
+        msg: "{{ val_ping_core.stdout_lines | default(['no ejecutado — no es swcorelim1']) }}"
+      when: inventory_hostname == "swcorelim1"
+
+    - name: "VALIDAR | Assert — ping Core-Core 0% packet loss"
+      ansible.builtin.assert:
+        that:
+          - val_ping_core.rc == 0
+          - "'0% packet loss' in val_ping_core.stdout"
+        fail_msg: >-
+          FAIL: Ping a 10.255.21.2 (SWCORELIM2) con pérdida o no alcanzable.
+          Verificar enlace Core-Core (bond-pcsc1-sc2: ens36+ens37).
+          Resultado: {{ val_ping_core.stdout | default('sin respuesta') }}
+        success_msg: "PASS: Ping Core-Core 10.255.21.2 → 0% packet loss (30 paquetes)"
+      when: inventory_hostname == "swcorelim1"

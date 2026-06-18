@@ -308,3 +308,25 @@ rstp_bridge: "br-core"
 rstp_priority: 4096          # Root Bridge principal (prioridad más baja = preferido)
 rstp_expected_role: "root-primary"
 
+# -----------------------------------------------------------------------
+# FASE 4B — Clean RSTP funcional (switching_l2_clean_rstp_fase4b)
+# -----------------------------------------------------------------------
+# Guardia principal — DEBE ser true para ejecutar el rol Fase 4B
+l2_clean_rstp_enabled: true
+
+# Bonds inter-switch que participan en RSTP
+# SWCORELIM1: Core1 ↔ Core2 | Core1 ↔ Dist1
+rstp_inter_switch_ports:
+  - bond-pcsc1-sc2    # Core1 ↔ Core2 (ens36+ens37)
+  - bond-pcsc1-sd1    # Core1 ↔ Dist1 (ens38+ens39)
+
+# Path costs por puerto
+# Costo 100 = preferido sobre el valor OVS por defecto (200000)
+rstp_path_costs:
+  bond-pcsc1-sc2: 100
+  bond-pcsc1-sd1: 100
+
+# Puertos edge — hosts finales (PCs, servidores, APs)
+# En los Core no hay accesos directos de hosts finales todavía
+rstp_edge_ports: []
+

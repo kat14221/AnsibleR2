@@ -120,3 +120,28 @@ rstp_bridge: "br-dist"
 rstp_priority: 20480         # Distribución secundaria (SWDISTLIM1 preferido como root de acceso)
 rstp_expected_role: "distribution-secondary"
 
+# -----------------------------------------------------------------------------
+# FASE 4B — Clean RSTP funcional (switching_l2_clean_rstp_fase4b)
+# -----------------------------------------------------------------------------
+# Guardia principal — DEBE ser true para ejecutar el rol Fase 4B
+l2_clean_rstp_enabled: true
+
+# Bonds inter-switch que participan en RSTP
+# SWDISTLIM2: Core2→Dist2 | Dist2↔Dist1 | Dist2→Acc1 | Dist2→Acc2
+rstp_inter_switch_ports:
+  - bond-pcsc2-sd2    # Core2 ↔ Dist2 (uplink hacia Core)
+  - bond-pcsd1-sd2    # Dist2 ↔ Dist1 (enlace lateral entre distribuciones)
+  - bond-pcsa1-sd2    # Dist2 ↔ Access1 (nombre asimétrico según topología)
+  - bond-pcsd2-sa2    # Dist2 ↔ Access2
+
+# Path costs por puerto
+# bond-pcsd1-sd2 tiene costo 200 para desventajar el enlace lateral Dist↔Dist
+rstp_path_costs:
+  bond-pcsc2-sd2: 100    # Uplink a Core2 — preferido
+  bond-pcsd1-sd2: 200    # Lateral a Dist1 — camino de mayor costo
+  bond-pcsa1-sd2: 100    # Downlink a Access1
+  bond-pcsd2-sa2: 100    # Downlink a Access2
+
+# Puertos edge — hosts finales — vacío en esta fase
+rstp_edge_ports: []
+

@@ -1,0 +1,52 @@
+---
+# =============================================================================
+# DEFAULTS — roles/switching_l2_clean_rstp_fase4b
+# =============================================================================
+# Valores seguros por defecto.
+# TODOS los valores operativos DEBEN venir de host_vars/<hostname>.yml
+#
+# El rol NO actúa si l2_clean_rstp_enabled=false.
+# Esto protege contra ejecuciones accidentales sobre hosts no preparados.
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# Guardia principal del rol
+# -----------------------------------------------------------------------
+l2_clean_rstp_enabled: false    # DEBE ser true explícitamente en host_vars
+
+# -----------------------------------------------------------------------
+# Bridge OVS objetivo
+# -----------------------------------------------------------------------
+rstp_bridge: ""                  # Debe definirse: br-core / br-dist / br-acc
+
+# -----------------------------------------------------------------------
+# Prioridad RSTP
+# El valor más bajo gana la elección de Root Bridge.
+# Siempre usar múltiplos de 4096 (estándar IEEE 802.1D).
+# -----------------------------------------------------------------------
+rstp_priority: 32768             # Prioridad máxima por defecto → nunca root accidental
+
+# -----------------------------------------------------------------------
+# Rol esperado — solo documentación/diagnóstico, no cambia comportamiento
+# -----------------------------------------------------------------------
+rstp_expected_role: "undefined"
+
+# -----------------------------------------------------------------------
+# Puertos inter-switch — bonds que participan en la topología RSTP
+# Si está vacío, el rol fallará (no se permiten bridges sin puertos RSTP).
+# -----------------------------------------------------------------------
+rstp_inter_switch_ports: []
+
+# -----------------------------------------------------------------------
+# Path costs por puerto — mapa port_name → cost
+# Si no se define costo para un puerto, OVS usa el valor por defecto (200000).
+# -----------------------------------------------------------------------
+rstp_path_costs: {}
+
+# -----------------------------------------------------------------------
+# Puertos edge — hosts finales (PCs, servidores, APs)
+# Se marcan admin-edge=true para saltarse negociación RSTP.
+# En switches de distribución/acceso se puede dejar vacío si no hay
+# accesos directos configurados en esta fase.
+# -----------------------------------------------------------------------
+rstp_edge_ports: []

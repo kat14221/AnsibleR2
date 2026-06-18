@@ -1,0 +1,423 @@
+---
+# =============================================================================
+# TASKS — roles/switching_l2_clean_rstp_fase4b
+# =============================================================================
+# FASE 4B: Limpieza controlada y reaplicación de RSTP funcional en OVS.
+#
+# PROBLEMA que resuelve:
+#   El rol anterior (switching_rstp_fase4) habilitó rstp_enable=true en el bridge
+#   pero NUNCA configuró los puertos/bonds inter-switch como non-edge.
+#   OVS requiere rstp-port-admin-edge=false en cada port participante para que
+#   el bridge intercambie BPDUs y construya el árbol STP correctamente.
+#   Sin eso, rstp/show muestra tabla vacía y cada bridge se cree root → loops.
+#
+# FLUJO:
+#   1. Precheck — validar variables y existencia real de bridge y ports
+#   2. Diagnóstico ANTES — capturar estado previo completo
+#   3. Limpieza controlada — limpiar solo config STP/RSTP
+#   4. Reaplicar RSTP — bridge + puertos inter-switch + edge ports
+#   5. Reinicio controlado de openvswitch-switch
+#   6. Validación posterior — asserts y advertencias
+#
+# NO toca:
+#   tag, trunks, vlan_mode, interfaces, bond_mode, bond-primary
+#   IPs, SVIs, rutas, Keepalived, OPNsense, archivos Netplan
+# =============================================================================
+
+
+# =============================================================================
+# BLOQUE 1 — PRECHECK
+# =============================================================================
+
+- name: "FASE4B PRECHECK | Validar guardia l2_clean_rstp_enabled"
+  ansible.builtin.assert:
+    that:
+      - l2_clean_rstp_enabled | bool
+    fail_msg: >-
+      ERROR: l2_clean_rstp_enabled=false en host_vars/{{ inventory_hostname }}.yml.
+      Este rol no debe ejecutarse sin habilitación explícita.
+      Establece l2_clean_rstp_enabled: true en host_vars del host objetivo.
+    success_msg: "OK: l2_clean_rstp_enabled=true en {{ inventory_hostname }}"
+  tags: always
+
+- name: "FASE4B PRECHECK | Validar variables obligatorias"
+  ansible.builtin.assert:
+    that:
+      - rstp_bridge is defined
+      - rstp_bridge | length > 0
+      - rstp_priority is defined
+      - rstp_priority | int > 0
+      - rstp_inter_switch_ports is defined
+      - rstp_inter_switch_ports | length > 0
+    fail_msg: >-
+      ERROR CRÍTICO: Variables faltantes en host_vars/{{ inventory_hostname }}.yml.
+      Requeridas: rstp_bridge, rstp_priority, rstp_inter_switch_ports (no vacío).
+      Valor actual — bridge: '{{ rstp_bridge | default("NO_DEFINIDO") }}'
+      priority: '{{ rstp_priority | default("NO_DEFINIDO") }}'
+      inter_switch_ports: '{{ rstp_inter_switch_ports | default([]) }}'
+    success_msg: >-
+      OK: Variables validadas — bridge={{ rstp_bridge }},
+      priority={{ rstp_priority }}, ports={{ rstp_inter_switch_ports | join(', ') }}
+  tags: always
+
+- name: "FASE4B PRECHECK | Verificar que el bridge {{ rstp_bridge }} existe en OVS"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ rstp_bridge }}"
+  changed_when: false
+  register: precheck_bridge_exists
+  failed_when: precheck_bridge_exists.rc != 0
+  tags: always
+
+- name: "FASE4B PRECHECK | Verificar existencia de cada puerto inter-switch"
+  ansible.builtin.command: "ovs-vsctl list port {{ item }}"
+  changed_when: false
+  register: precheck_port_check
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: precheck_port_check.rc != 0
+  tags: always
+
+- name: "FASE4B PRECHECK | Confirmar todos los puertos inter-switch OK"
+  ansible.builtin.debug:
+    msg: "OK: Puerto {{ item.item }} verificado en OVS (bridge={{ rstp_bridge }})"
+  loop: "{{ precheck_port_check.results }}"
+  tags: always
+
+
+# =============================================================================
+# BLOQUE 2 — DIAGNÓSTICO ANTES
+# =============================================================================
+
+- name: "FASE4B DIAG-ANTES | rstp_enable actual en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+  changed_when: false
+  register: diag_rstp_enable_before
+  tags: rstp_diag
+
+- name: "FASE4B DIAG-ANTES | stp_enable actual en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} stp_enable"
+  changed_when: false
+  register: diag_stp_enable_before
+  tags: rstp_diag
+
+- name: "FASE4B DIAG-ANTES | other_config actual en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+  changed_when: false
+  register: diag_other_config_before
+  tags: rstp_diag
+
+- name: "FASE4B DIAG-ANTES | Listar puertos del bridge {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl list-ports {{ rstp_bridge }}"
+  changed_when: false
+  register: diag_ports_before
+  tags: rstp_diag
+
+- name: "FASE4B DIAG-ANTES | ovs-appctl rstp/show {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+  changed_when: false
+  register: diag_rstp_show_before
+  failed_when: false
+  tags: rstp_diag
+
+- name: "FASE4B DIAG-ANTES | ovs-ofctl show {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-ofctl show {{ rstp_bridge }}"
+  changed_when: false
+  register: diag_ofctl_before
+  failed_when: false
+  tags: rstp_diag
+
+- name: "FASE4B DIAG-ANTES | Mostrar estado completo previo"
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      bridge: "{{ rstp_bridge }}"
+      rstp_enable_actual: "{{ diag_rstp_enable_before.stdout }}"
+      stp_enable_actual: "{{ diag_stp_enable_before.stdout }}"
+      other_config_actual: "{{ diag_other_config_before.stdout }}"
+      puertos_bridge: "{{ diag_ports_before.stdout_lines }}"
+      rstp_show_antes: "{{ diag_rstp_show_before.stdout_lines | default([]) }}"
+      prioridad_a_aplicar: "{{ rstp_priority }}"
+      rol_esperado: "{{ rstp_expected_role }}"
+      inter_switch_ports: "{{ rstp_inter_switch_ports }}"
+      path_costs: "{{ rstp_path_costs }}"
+      edge_ports: "{{ rstp_edge_ports }}"
+  tags: rstp_diag
+
+
+# =============================================================================
+# BLOQUE 3 — LIMPIEZA CONTROLADA
+# =============================================================================
+
+- name: "FASE4B LIMPIEZA | Deshabilitar STP legado en bridge {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ rstp_bridge }} stp_enable=false"
+  changed_when: true
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Deshabilitar RSTP en bridge {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ rstp_bridge }} rstp_enable=false"
+  changed_when: true
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Limpiar other_config del bridge {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl clear bridge {{ rstp_bridge }} other_config"
+  changed_when: true
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Limpiar rstp_status en puerto {{ item }}"
+  ansible.builtin.command: "ovs-vsctl clear port {{ item }} rstp_status"
+  changed_when: true
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Limpiar rstp_statistics en puerto {{ item }}"
+  ansible.builtin.command: "ovs-vsctl clear port {{ item }} rstp_statistics"
+  changed_when: true
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Eliminar rstp-port-admin-edge de other_config en {{ item }}"
+  ansible.builtin.command: >-
+    ovs-vsctl remove port {{ item }} other_config rstp-port-admin-edge
+  changed_when: false
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Eliminar rstp-port-auto-edge de other_config en {{ item }}"
+  ansible.builtin.command: >-
+    ovs-vsctl remove port {{ item }} other_config rstp-port-auto-edge
+  changed_when: false
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Eliminar rstp-port-path-cost de other_config en {{ item }}"
+  ansible.builtin.command: >-
+    ovs-vsctl remove port {{ item }} other_config rstp-port-path-cost
+  changed_when: false
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Eliminar rstp-port-priority de other_config en {{ item }}"
+  ansible.builtin.command: >-
+    ovs-vsctl remove port {{ item }} other_config rstp-port-priority
+  changed_when: false
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_clean
+
+- name: "FASE4B LIMPIEZA | Limpiar rstp_status en edge ports (si existen)"
+  ansible.builtin.command: "ovs-vsctl clear port {{ item }} rstp_status"
+  changed_when: false
+  loop: "{{ rstp_edge_ports }}"
+  failed_when: false
+  tags: rstp_clean
+  when: rstp_edge_ports | length > 0
+
+- name: "FASE4B LIMPIEZA | Confirmar limpieza completada"
+  ansible.builtin.debug:
+    msg: >-
+      OK: Limpieza RSTP completada en {{ inventory_hostname }}/{{ rstp_bridge }}.
+      Puertos limpiados: {{ rstp_inter_switch_ports | join(', ') }}
+  tags: rstp_clean
+
+
+# =============================================================================
+# BLOQUE 4 — REAPLICAR RSTP
+# =============================================================================
+
+- name: "FASE4B APLICAR | Habilitar RSTP en bridge {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ rstp_bridge }} rstp_enable=true"
+  changed_when: true
+  tags: rstp_apply
+
+- name: "FASE4B APLICAR | Configurar prioridad RSTP {{ rstp_priority }} en {{ rstp_bridge }}"
+  ansible.builtin.command: >-
+    ovs-vsctl set bridge {{ rstp_bridge }}
+    other_config:rstp-priority={{ rstp_priority }}
+  changed_when: true
+  tags: rstp_apply
+
+- name: "FASE4B APLICAR | Marcar puerto inter-switch {{ item }} como non-edge (admin-edge=false)"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item }}
+    other_config:rstp-port-admin-edge=false
+  changed_when: true
+  loop: "{{ rstp_inter_switch_ports }}"
+  tags: rstp_apply
+
+- name: "FASE4B APLICAR | Marcar puerto inter-switch {{ item }} como non-auto-edge"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item }}
+    other_config:rstp-port-auto-edge=false
+  changed_when: true
+  loop: "{{ rstp_inter_switch_ports }}"
+  tags: rstp_apply
+
+- name: "FASE4B APLICAR | Configurar path cost en puerto {{ item.key }}"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item.key }}
+    other_config:rstp-port-path-cost={{ item.value }}
+  changed_when: true
+  loop: "{{ rstp_path_costs | dict2items }}"
+  when: rstp_path_costs | length > 0
+  tags: rstp_apply
+
+- name: "FASE4B APLICAR | Marcar edge ports como admin-edge=true (si existen)"
+  ansible.builtin.command: >-
+    ovs-vsctl set port {{ item }}
+    other_config:rstp-port-admin-edge=true
+    other_config:rstp-port-auto-edge=true
+  changed_when: true
+  loop: "{{ rstp_edge_ports }}"
+  when: rstp_edge_ports | length > 0
+  tags: rstp_apply
+
+- name: "FASE4B APLICAR | Confirmar configuración aplicada"
+  ansible.builtin.debug:
+    msg: >-
+      OK: RSTP configurado en {{ inventory_hostname }}/{{ rstp_bridge }}.
+      Prioridad={{ rstp_priority }}, Puertos inter-switch={{ rstp_inter_switch_ports | join(', ') }}.
+  tags: rstp_apply
+
+
+# =============================================================================
+# BLOQUE 5 — REINICIO CONTROLADO DE OPENVSWITCH
+# =============================================================================
+
+- name: "FASE4B RESTART | Reiniciar openvswitch-switch para aplicar configuración RSTP"
+  ansible.builtin.systemd:
+    name: openvswitch-switch
+    state: restarted
+  tags: rstp_restart
+
+- name: "FASE4B RESTART | Esperar estabilización de OVS y RSTP (15 segundos)"
+  ansible.builtin.pause:
+    seconds: 15
+  tags: rstp_restart
+
+- name: "FASE4B RESTART | Verificar que el bridge {{ rstp_bridge }} existe tras reinicio"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ rstp_bridge }}"
+  changed_when: false
+  register: post_restart_bridge_check
+  failed_when: post_restart_bridge_check.rc != 0
+  tags: rstp_restart
+
+- name: "FASE4B RESTART | Bridge confirmado tras reinicio"
+  ansible.builtin.debug:
+    msg: "OK: Bridge {{ rstp_bridge }} existe y OVS está activo en {{ inventory_hostname }}"
+  tags: rstp_restart
+
+
+# =============================================================================
+# BLOQUE 6 — VALIDACIÓN POSTERIOR
+# =============================================================================
+
+- name: "FASE4B VALIDAR | Obtener rstp_enable final en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+  changed_when: false
+  register: val_rstp_enable_after
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Obtener other_config final en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+  changed_when: false
+  register: val_rstp_config_after
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Assert — rstp_enable=true aplicado"
+  ansible.builtin.assert:
+    that:
+      - val_rstp_enable_after.stdout | trim == "true"
+    fail_msg: >-
+      ERROR CRÍTICO: rstp_enable NO quedó en 'true' en {{ rstp_bridge }}
+      de {{ inventory_hostname }} tras el reinicio.
+      Valor actual: '{{ val_rstp_enable_after.stdout }}'
+    success_msg: "PASS: rstp_enable=true confirmado en {{ inventory_hostname }}/{{ rstp_bridge }}"
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Assert — prioridad {{ rstp_priority }} presente en other_config"
+  ansible.builtin.assert:
+    that:
+      - rstp_priority | string in val_rstp_config_after.stdout
+    fail_msg: >-
+      ERROR: La prioridad {{ rstp_priority }} NO aparece en other_config de
+      {{ inventory_hostname }}/{{ rstp_bridge }}.
+      Valor actual: '{{ val_rstp_config_after.stdout }}'
+    success_msg: >-
+      PASS: rstp-priority={{ rstp_priority }} confirmado en
+      {{ inventory_hostname }}/{{ rstp_bridge }}
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Verificar puerto inter-switch {{ item }} existe"
+  ansible.builtin.command: "ovs-vsctl list port {{ item }}"
+  changed_when: false
+  register: val_port_exists_after
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: val_port_exists_after.rc != 0
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Obtener other_config de puerto {{ item }}"
+  ansible.builtin.command: >-
+    ovs-vsctl get port {{ item }} other_config
+  changed_when: false
+  register: val_port_config_after
+  loop: "{{ rstp_inter_switch_ports }}"
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Mostrar other_config por puerto inter-switch"
+  ansible.builtin.debug:
+    msg:
+      puerto: "{{ item.item }}"
+      other_config: "{{ item.stdout }}"
+  loop: "{{ val_port_config_after.results }}"
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | ovs-appctl rstp/show {{ rstp_bridge }} (resultado final)"
+  ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+  changed_when: false
+  register: val_rstp_show_after
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | ovs-ofctl show {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-ofctl show {{ rstp_bridge }}"
+  changed_when: false
+  register: val_ofctl_after
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4B VALIDAR | Mostrar estado RSTP final completo"
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      bridge: "{{ rstp_bridge }}"
+      rstp_enable_final: "{{ val_rstp_enable_after.stdout }}"
+      other_config_final: "{{ val_rstp_config_after.stdout }}"
+      rstp_show_final: "{{ val_rstp_show_after.stdout_lines | default([]) }}"
+      rol_esperado: "{{ rstp_expected_role }}"
+      prioridad_aplicada: "{{ rstp_priority }}"
+  tags: rstp_validate
+
+# -----------------------------------------------------------------------
+# Advertencia si rstp/show sigue mostrando tabla vacía
+# (puede tardar en converger, pero merece advertencia)
+# -----------------------------------------------------------------------
+- name: "FASE4B VALIDAR | ADVERTENCIA si rstp/show muestra tabla vacía de interfaces"
+  ansible.builtin.debug:
+    msg: >-
+      ⚠ ADVERTENCIA: ovs-appctl rstp/show {{ rstp_bridge }} en {{ inventory_hostname }}
+      muestra tabla de interfaces aparentemente vacía.
+      Esto puede ser normal si los enlaces inter-switch aún están bajados o si
+      el protocolo RSTP no ha convergido todavía (esperar 30-60s más).
+      VERIFICAR MANUALMENTE: sudo ovs-appctl rstp/show {{ rstp_bridge }}
+      Si la tabla sigue vacía con los enlaces activos, revisar si los bonds
+      están UP y si los miembros físicos tienen link_state=up en OVS.
+  when: >-
+    val_rstp_show_after.stdout is not defined or
+    (val_rstp_show_after.stdout | trim | length == 0) or
+    ('-------' not in val_rstp_show_after.stdout and
+     val_rstp_show_after.stdout_lines | default([]) | length < 5)
+  tags: rstp_validate

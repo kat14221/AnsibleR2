@@ -121,3 +121,30 @@ rstp_bridge: "br-dist"
 rstp_priority: 16384         # Distribución primaria (menor prioridad que Core)
 rstp_expected_role: "distribution-primary"
 
+# -----------------------------------------------------------------------------
+# FASE 4B — Clean RSTP funcional (switching_l2_clean_rstp_fase4b)
+# -----------------------------------------------------------------------------
+# Guardia principal — DEBE ser true para ejecutar el rol Fase 4B
+l2_clean_rstp_enabled: true
+
+# Bonds inter-switch que participan en RSTP
+# SWDISTLIM1: Core1→Dist1 | Dist1↔Dist2 | Dist1→Acc1 | Dist1→Acc2
+rstp_inter_switch_ports:
+  - bond-pcsc1-sd1    # Core1 ↔ Dist1 (uplink hacia Core)
+  - bond-pcsd1-sd2    # Dist1 ↔ Dist2 (enlace lateral entre distribuciones)
+  - bond-pcsd1-sa1    # Dist1 ↔ Access1
+  - bond-pcsd1-sa2    # Dist1 ↔ Access2
+
+# Path costs por puerto
+# bond-pcsd1-sd2 tiene costo 200 para desventajar el enlace lateral Dist↔Dist
+# OVS preferirá los uplinks hacia Core (costo 100) frente al path lateral
+rstp_path_costs:
+  bond-pcsc1-sd1: 100    # Uplink a Core1 — preferido
+  bond-pcsd1-sd2: 200    # Lateral a Dist2 — camino de mayor costo
+  bond-pcsd1-sa1: 100    # Downlink a Access1
+  bond-pcsd1-sa2: 100    # Downlink a Access2
+
+# Puertos edge — puertos de acceso a hosts finales
+# Dejar vacío si no hay puertos de acceso L2 configurados en esta fase
+rstp_edge_ports: []
+

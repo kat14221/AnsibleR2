@@ -214,3 +214,23 @@ rstp_bridge: "br-core"
 rstp_priority: 8192          # Root Bridge secundario (toma el relevo si SWCORELIM1 falla)
 rstp_expected_role: "root-secondary"
 
+# -----------------------------------------------------------------------
+# FASE 4B — Clean RSTP funcional (switching_l2_clean_rstp_fase4b)
+# -----------------------------------------------------------------------
+# Guardia principal — DEBE ser true para ejecutar el rol Fase 4B
+l2_clean_rstp_enabled: true
+
+# Bonds inter-switch que participan en RSTP
+# SWCORELIM2: Core2 ↔ Core1 | Core2 ↔ Dist2
+rstp_inter_switch_ports:
+  - bond-pcsc1-sc2    # Core2 ↔ Core1 (ens36+ens37) — mismo nombre que en SWCORELIM1
+  - bond-pcsc2-sd2    # Core2 ↔ Dist2 (ens41+ens40)
+
+# Path costs por puerto
+rstp_path_costs:
+  bond-pcsc1-sc2: 100
+  bond-pcsc2-sd2: 100
+
+# Puertos edge — no hay accesos directos de hosts finales en Core
+rstp_edge_ports: []
+
