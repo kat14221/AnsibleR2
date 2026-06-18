@@ -99,3 +99,12 @@ swacclim2_active_services:
   - ssh
   - openvswitch-switch
   - lldpd
+
+# -----------------------------------------------------------------------------
+# FASE 4 — RSTP Switching (Open vSwitch)
+# -----------------------------------------------------------------------------
+rstp_enabled: true
+rstp_bridge: "br-acc"
+rstp_priority: 36864         # Acceso — nunca root, prioridad menor que swacclim1
+rstp_expected_role: "access"
+

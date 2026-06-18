@@ -481,5 +481,224 @@ ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_vlans_core_
 
 ---
 
-> **Autor:** Proyecto Infraestructura Red Empresarial Lima  
-> **Versión:** 1.0.0 | **Última actualización:** 2026-06-08
+> **Autor:** Proyecto Infraestructura Red Empresarial Lima
+> **Versión:** 1.2.0 | **Última actualización:** 2026-06-18
+
+---
+
+## Fase 4 — RSTP Switching (Open vSwitch)
+
+### Estado inicial requerido antes de aplicar Fase 4
+
+> ⚠️ **`keepalived` debe permanecer DETENIDO en SWCORELIM1 y SWCORELIM2 hasta validar RSTP.**
+
+Los siguientes enlaces están temporalmente abajo para diagnóstico L2 y deben mantenerse así hasta que RSTP esté configurado en todos los switches:
+
+```text
+SWCORELIM1: ens38, ens39  (hacia SWDISTLIM1)
+SWCORELIM2: ens40, ens41  (hacia SWDISTLIM2)
+```
+
+### Prioridades RSTP por switch
+
+| Switch       | Bridge   | Prioridad | Rol                     |
+|---|---|---|---|
+| SWCORELIM1   | br-core  | 4096      | Root Bridge principal   |
+| SWCORELIM2   | br-core  | 8192      | Root Bridge secundario  |
+| SWDISTLIM1   | br-dist  | 16384     | Distribución primaria   |
+| SWDISTLIM2   | br-dist  | 20480     | Distribución secundaria |
+| SWACCLIM1    | br-acc   | 32768     | Acceso                  |
+| SWACCLIM2    | br-acc   | 36864     | Acceso                  |
+
+### Paso 1 — Preparar y pushear desde Windows/OpenCode
+
+```bash
+git status
+git add roles/switching_rstp_fase4 playbooks host_vars README.md
+git commit -m "fase4 habilita rstp en switching ovs lima"
+git push
+```
+
+### Paso 2 — git pull en cada VM switch
+
+En cada VM (swcorelim1, swcorelim2, swdistlim1, swdistlim2, swacclim1, swacclim2):
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+git pull --rebase origin main
+```
+
+### Paso 3 — Aplicar RSTP en Core desde SWCORELIM1
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+
+# Syntax-check (no ejecuta nada en remoto)
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_core.yml --syntax-check
+
+# Aplicar RSTP en SWCORELIM1 y SWCORELIM2
+# NO usar -k (ya hay llave SSH hacia SWCORELIM2). Usar -K para sudo.
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_core.yml -vv -K
+
+# Validar
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_rstp_core.yml -vv -K
+```
+
+### Paso 4 — Aplicar RSTP en distribución (localmente en cada VM)
+
+**En SWDISTLIM1:**
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swdistlim1_local.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swdistlim1_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_rstp_swdistlim1_local.yml -vv -K
+```
+
+**En SWDISTLIM2:**
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swdistlim2_local.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swdistlim2_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_rstp_swdistlim2_local.yml -vv -K
+```
+
+### Paso 5 — Aplicar RSTP en acceso (localmente en cada VM)
+
+**En SWACCLIM1:**
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swacclim1_local.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swacclim1_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_rstp_swacclim1_local.yml -vv -K
+```
+
+**En SWACCLIM2:**
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swacclim2_local.yml --syntax-check
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/05_configurar_rstp_swacclim2_local.yml -vv -K
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_rstp_swacclim2_local.yml -vv -K
+```
+
+### Paso 6 — Rehabilitar enlaces hacia distribución (solo si RSTP aplicado en TODOS)
+
+**En SWCORELIM1:**
+
+```bash
+sudo ip link set ens38 up
+sudo ip link set ens39 up
+```
+
+**En SWCORELIM2:**
+
+```bash
+sudo ip link set ens40 up
+sudo ip link set ens41 up
+```
+
+Esperar convergencia RSTP:
+
+```bash
+sleep 60
+```
+
+### Paso 7 — Validar estabilidad L2 con keepalived todavía DETENIDO
+
+```bash
+# Desde SWCORELIM1:
+ping -c 30 10.255.21.2
+ping -I svi-vlan10 -c 10 192.168.10.126
+ping -I svi-vlan20 -c 10 192.168.20.254
+ping -I svi-vlan30 -c 10 192.168.30.254
+ping -I svi-vlan40 -c 10 192.168.40.30
+ping -I svi-vlan60 -c 10 192.168.60.126
+ping -I svi-vlan80 -c 10 192.168.80.30
+ping -I svi-vlan99 -c 10 192.168.99.12
+```
+
+**Criterio:** 0% packet loss (se acepta 1 paquete perdido por ARP inicial, NO pérdida sostenida).
+
+### Paso 8 — Levantar Keepalived (solo si L2 es estable)
+
+**En SWCORELIM1:**
+
+```bash
+sudo systemctl start keepalived
+sudo systemctl status keepalived --no-pager
+```
+
+**En SWCORELIM2 (desde SWCORELIM1):**
+
+```bash
+ssh adminred@10.255.21.2
+sudo systemctl start keepalived
+sudo systemctl status keepalived --no-pager
+exit
+```
+
+Esperar convergencia VRRP:
+
+```bash
+sleep 30
+```
+
+### Paso 9 — Validar VRRP
+
+```bash
+ping -I svi-vlan20 -c 10 192.168.20.1
+ping -I svi-vlan40 -c 10 192.168.40.1
+ping -I svi-vlan80 -c 10 192.168.80.1
+
+sudo journalctl -u keepalived -n 100 --no-pager \
+  | egrep "VI_LIMA_CORE|MASTER|BACKUP|FAULT|priority|advert"
+
+ssh adminred@10.255.21.2 \
+  'sudo journalctl -u keepalived -n 100 --no-pager \
+   | egrep "VI_LIMA_CORE|MASTER|BACKUP|FAULT|priority|advert"'
+```
+
+**Criterios:**
+- SWCORELIM1 → MASTER (prioridad 150)
+- SWCORELIM2 → BACKUP (prioridad 100)
+- Sin flapeo MASTER/BACKUP repetitivo
+- VIPs responden sin pérdida
+
+### Rollback manual de RSTP
+
+Si RSTP genera problemas en cualquier bridge, desactivar:
+
+```bash
+# Core
+sudo ovs-vsctl set bridge br-core rstp_enable=false
+
+# Distribución
+sudo ovs-vsctl set bridge br-dist rstp_enable=false
+
+# Acceso
+sudo ovs-vsctl set bridge br-acc rstp_enable=false
+```
+
+---
+
+> **Autor:** Proyecto Infraestructura Red Empresarial Lima
+> **Versión:** 1.2.0 | **Última actualización:** 2026-06-18
+

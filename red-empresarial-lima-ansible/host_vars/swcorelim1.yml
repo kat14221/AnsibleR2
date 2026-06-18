@@ -299,3 +299,12 @@ svis:
     peer_ip: "192.168.99.12"
     vip: "192.168.99.1"
     vrid: 99
+
+# -----------------------------------------------------------------------
+# FASE 4 — RSTP Switching (Open vSwitch)
+# -----------------------------------------------------------------------
+rstp_enabled: true
+rstp_bridge: "br-core"
+rstp_priority: 4096          # Root Bridge principal (prioridad más baja = preferido)
+rstp_expected_role: "root-primary"
+

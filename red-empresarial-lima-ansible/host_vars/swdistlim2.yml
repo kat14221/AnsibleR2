@@ -111,3 +111,12 @@ swdistlim2_active_services:
   - ssh
   - openvswitch-switch
   - lldpd
+
+# -----------------------------------------------------------------------------
+# FASE 4 — RSTP Switching (Open vSwitch)
+# -----------------------------------------------------------------------------
+rstp_enabled: true
+rstp_bridge: "br-dist"
+rstp_priority: 20480         # Distribución secundaria (SWDISTLIM1 preferido como root de acceso)
+rstp_expected_role: "distribution-secondary"
+

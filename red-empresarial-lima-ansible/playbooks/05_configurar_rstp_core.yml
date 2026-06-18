@@ -1,0 +1,42 @@
+---
+# =============================================================================
+# PLAYBOOK: 05_configurar_rstp_core.yml
+# =============================================================================
+# FASE 4 RSTP — Configurar RSTP en SWCORELIM1 y SWCORELIM2
+#
+# Ejecutar desde SWCORELIM1 (tiene SSH a SWCORELIM2):
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/05_configurar_rstp_core.yml --syntax-check
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/05_configurar_rstp_core.yml -vv -K
+#
+# NO usar -k. SWCORELIM1 ya tiene llave SSH hacia SWCORELIM2.
+# Usar -K para sudo.
+#
+# REQUISITO: keepalived debe estar DETENIDO en ambos Core durante este paso.
+# =============================================================================
+
+- name: "FASE 4 RSTP | Configurar RSTP en Core Lima"
+  hosts: swcorelim1:swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  pre_tasks:
+    - name: "PRECHECK | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Mostrar variables RSTP cargadas en {{ inventory_hostname }}"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          rstp_enabled: "{{ rstp_enabled | default('NO_DEFINIDO') }}"
+          rstp_bridge: "{{ rstp_bridge | default('NO_DEFINIDO') }}"
+          rstp_priority: "{{ rstp_priority | default('NO_DEFINIDO') }}"
+          rstp_expected_role: "{{ rstp_expected_role | default('NO_DEFINIDO') }}"
+      tags: always
+
+  roles:
+    - role: switching_rstp_fase4

@@ -1,0 +1,99 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_rstp_core.yml
+# =============================================================================
+# FASE 4 RSTP — Validación de RSTP en SWCORELIM1 y SWCORELIM2
+#
+# Solo lectura — NO modifica nada.
+# Ejecutar desde SWCORELIM1:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rstp_core.yml -vv -K
+# =============================================================================
+
+- name: "VALIDAR RSTP | Core Lima — SWCORELIM1 y SWCORELIM2"
+  hosts: swcorelim1:swcorelim2
+  gather_facts: true
+  become: true
+  serial: 1
+
+  tasks:
+    - name: "VALIDAR | Cargar host_vars para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+
+    # -------------------------------------------------------------------------
+    # Verificar rstp_enable
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Obtener rstp_enable en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+      changed_when: false
+      register: val_rstp_enable
+
+    - name: "VALIDAR | Assert — rstp_enable=true en {{ inventory_hostname }}"
+      ansible.builtin.assert:
+        that:
+          - val_rstp_enable.stdout | trim == "true"
+        fail_msg: "FAIL: rstp_enable NO está en true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+        success_msg: "PASS: rstp_enable=true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+
+    # -------------------------------------------------------------------------
+    # Verificar prioridad
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Obtener other_config (prioridad RSTP) en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+      changed_when: false
+      register: val_rstp_config
+
+    - name: "VALIDAR | Mostrar other_config"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          bridge: "{{ rstp_bridge }}"
+          other_config: "{{ val_rstp_config.stdout }}"
+          prioridad_esperada: "{{ rstp_priority }}"
+
+    - name: "VALIDAR | Assert — prioridad {{ rstp_priority }} presente en other_config"
+      ansible.builtin.assert:
+        that:
+          - rstp_priority | string in val_rstp_config.stdout
+        fail_msg: >-
+          FAIL: La prioridad {{ rstp_priority }} NO aparece en other_config de
+          {{ inventory_hostname }}/{{ rstp_bridge }}. Valor actual: {{ val_rstp_config.stdout }}
+        success_msg: "PASS: rstp-priority={{ rstp_priority }} confirmado en {{ inventory_hostname }}"
+
+    # -------------------------------------------------------------------------
+    # ovs-appctl rstp/show
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | ovs-appctl rstp/show {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+      changed_when: false
+      register: val_rstp_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar estado RSTP completo"
+      ansible.builtin.debug:
+        msg: "{{ val_rstp_show.stdout_lines | default([]) }}"
+
+    # -------------------------------------------------------------------------
+    # Ping Core-Core (solo desde swcorelim1)
+    # -------------------------------------------------------------------------
+    - name: "VALIDAR | Ping Core-Core 10.255.21.2 (solo desde swcorelim1)"
+      ansible.builtin.command: "ping -c 5 -W 2 10.255.21.2"
+      changed_when: false
+      register: val_ping_core
+      failed_when: false
+      when: inventory_hostname == "swcorelim1"
+
+    - name: "VALIDAR | Mostrar resultado ping Core-Core"
+      ansible.builtin.debug:
+        msg: "{{ val_ping_core.stdout_lines | default(['no ejecutado']) }}"
+      when: inventory_hostname == "swcorelim1"
+
+    - name: "VALIDAR | Assert — ping Core-Core sin pérdida"
+      ansible.builtin.assert:
+        that:
+          - val_ping_core.rc == 0
+          - "'0% packet loss' in val_ping_core.stdout"
+        fail_msg: "FAIL: Ping Core-Core 10.255.21.2 con pérdida o no alcanzable."
+        success_msg: "PASS: Ping Core-Core 10.255.21.2 → 0% packet loss."
+      when: inventory_hostname == "swcorelim1"

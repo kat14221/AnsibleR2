@@ -1,0 +1,143 @@
+---
+# =============================================================================
+# TASKS — roles/switching_rstp_fase4
+# =============================================================================
+# Fase 4: Habilita RSTP en el bridge OVS del switch.
+#
+# NO toca:
+#   - puertos, bonds, trunks, VLAN tags
+#   - IPs existentes, SVIs, VRRP, Keepalived
+#   - configuración de Fase 2 ni Fase 3
+#   - VMs, ESXi, OPNsense, routers
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# PRECHECK: validar variables y existencia del bridge
+# ---------------------------------------------------------------------------
+- name: "RSTP | Validar que rstp_enabled está activo"
+  ansible.builtin.assert:
+    that:
+      - rstp_enabled | bool
+    fail_msg: >-
+      ERROR: rstp_enabled=false en host_vars/{{ inventory_hostname }}.yml.
+      Este rol no debe ejecutarse sin habilitación explícita.
+    success_msg: "OK: rstp_enabled=true en {{ inventory_hostname }}"
+  tags: always
+
+- name: "RSTP | Validar variables requeridas"
+  ansible.builtin.assert:
+    that:
+      - rstp_bridge is defined
+      - rstp_bridge | length > 0
+      - rstp_priority is defined
+      - rstp_priority | int > 0
+    fail_msg: >-
+      ERROR CRÍTICO: rstp_bridge o rstp_priority no definidos en
+      host_vars/{{ inventory_hostname }}.yml. Abortar.
+    success_msg: >-
+      OK: rstp_bridge={{ rstp_bridge }}, rstp_priority={{ rstp_priority }},
+      rstp_expected_role={{ rstp_expected_role }}
+  tags: always
+
+- name: "RSTP | Verificar que el bridge {{ rstp_bridge }} existe en OVS"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ rstp_bridge }}"
+  changed_when: false
+  register: rstp_bridge_check
+  tags: always
+
+# ---------------------------------------------------------------------------
+# DIAGNÓSTICO ANTES: estado actual del bridge
+# ---------------------------------------------------------------------------
+- name: "RSTP | Diagnóstico ANTES — rstp_enable actual en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+  changed_when: false
+  register: rstp_before_enable
+  tags: rstp
+
+- name: "RSTP | Diagnóstico ANTES — other_config actual en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+  changed_when: false
+  register: rstp_before_config
+  tags: rstp
+
+- name: "RSTP | Diagnóstico ANTES — puertos en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl list-ports {{ rstp_bridge }}"
+  changed_when: false
+  register: rstp_ports_before
+  tags: rstp
+
+- name: "RSTP | Mostrar estado previo"
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      bridge: "{{ rstp_bridge }}"
+      rstp_enable_actual: "{{ rstp_before_enable.stdout }}"
+      other_config_actual: "{{ rstp_before_config.stdout }}"
+      puertos: "{{ rstp_ports_before.stdout_lines }}"
+      prioridad_a_aplicar: "{{ rstp_priority }}"
+      rol_esperado: "{{ rstp_expected_role }}"
+  tags: rstp
+
+# ---------------------------------------------------------------------------
+# APLICAR: habilitar RSTP y configurar prioridad
+# ---------------------------------------------------------------------------
+- name: "RSTP | Habilitar RSTP en bridge {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl set bridge {{ rstp_bridge }} rstp_enable=true"
+  changed_when: true
+  tags: rstp
+
+- name: "RSTP | Configurar prioridad RSTP {{ rstp_priority }} en bridge {{ rstp_bridge }}"
+  ansible.builtin.command: >-
+    ovs-vsctl set bridge {{ rstp_bridge }}
+    other_config:rstp-priority={{ rstp_priority }}
+  changed_when: true
+  tags: rstp
+
+# ---------------------------------------------------------------------------
+# ESPERAR: tiempo de estabilización del árbol STP
+# ---------------------------------------------------------------------------
+- name: "RSTP | Esperar estabilización del árbol RSTP (10s)"
+  ansible.builtin.pause:
+    seconds: 10
+  tags: rstp
+
+# ---------------------------------------------------------------------------
+# VALIDAR: confirmar configuración aplicada
+# ---------------------------------------------------------------------------
+- name: "RSTP | Validar — rstp_enable en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+  changed_when: false
+  register: rstp_after_enable
+  tags: rstp
+
+- name: "RSTP | Validar — other_config en {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+  changed_when: false
+  register: rstp_after_config
+  tags: rstp
+
+- name: "RSTP | Assert — confirmar que rstp_enable=true fue aplicado"
+  ansible.builtin.assert:
+    that:
+      - rstp_after_enable.stdout | trim == "true"
+    fail_msg: "ERROR: rstp_enable no quedó en true en {{ rstp_bridge }} de {{ inventory_hostname }}"
+    success_msg: "OK: rstp_enable=true confirmado en {{ rstp_bridge }} de {{ inventory_hostname }}"
+  tags: rstp
+
+- name: "RSTP | Mostrar ovs-appctl rstp/show {{ rstp_bridge }}"
+  ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+  changed_when: false
+  register: rstp_show
+  failed_when: false
+  tags: rstp
+
+- name: "RSTP | Resultado final de estado RSTP"
+  ansible.builtin.debug:
+    msg:
+      host: "{{ inventory_hostname }}"
+      bridge: "{{ rstp_bridge }}"
+      rstp_enable_final: "{{ rstp_after_enable.stdout }}"
+      other_config_final: "{{ rstp_after_config.stdout }}"
+      rstp_show: "{{ rstp_show.stdout_lines | default([]) }}"
+      rol_esperado: "{{ rstp_expected_role }}"
+  tags: rstp

@@ -1,0 +1,50 @@
+---
+# =============================================================================
+# PLAYBOOK: 05_configurar_rstp_swacclim2_local.yml
+# =============================================================================
+# FASE 4 RSTP — Configurar RSTP localmente en SWACCLIM2
+#
+# Ejecutar DENTRO de la VM SWACCLIM2:
+#   cd ~/AnsibleR2/red-empresarial-lima-ansible
+#   git pull --rebase origin main
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/05_configurar_rstp_swacclim2_local.yml --syntax-check
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/05_configurar_rstp_swacclim2_local.yml -vv -K
+#
+# SEGURIDAD: Este playbook verifica que se está ejecutando en SWACCLIM2.
+# =============================================================================
+
+- name: "FASE 4 RSTP | Configurar RSTP local en SWACCLIM2"
+  hosts: swacclim2
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: "SAFE | Confirmar que estoy ejecutando en SWACCLIM2"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swacclim2"
+        fail_msg: >-
+          ERROR: Este playbook solo debe ejecutarse DENTRO de la VM SWACCLIM2.
+          ansible_hostname actual: {{ ansible_hostname }}
+        success_msg: "OK: Ejecutando en SWACCLIM2 (ansible_hostname={{ ansible_hostname }})"
+      tags: always
+
+    - name: "PRECHECK | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Mostrar variables RSTP cargadas"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          rstp_enabled: "{{ rstp_enabled | default('NO_DEFINIDO') }}"
+          rstp_bridge: "{{ rstp_bridge | default('NO_DEFINIDO') }}"
+          rstp_priority: "{{ rstp_priority | default('NO_DEFINIDO') }}"
+          rstp_expected_role: "{{ rstp_expected_role | default('NO_DEFINIDO') }}"
+      tags: always
+
+  roles:
+    - role: switching_rstp_fase4

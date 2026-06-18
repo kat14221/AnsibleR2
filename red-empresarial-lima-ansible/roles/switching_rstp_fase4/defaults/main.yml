@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# DEFAULTS — roles/switching_rstp_fase4
+# =============================================================================
+# Valores seguros por defecto. NUNCA se ejecutará el rol si rstp_enabled=false.
+# TODOS los valores reales deben venir de host_vars/<hostname>.yml
+# =============================================================================
+
+rstp_enabled: false   # Seguridad: el rol no actúa si no se habilita explícitamente
+rstp_bridge: ""       # Debe definirse en host_vars (br-core / br-dist / br-acc)
+rstp_priority: 32768  # Prioridad máxima por defecto → nunca root bridge accidental
+rstp_expected_role: "undefined"

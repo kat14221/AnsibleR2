@@ -1,0 +1,67 @@
+---
+# =============================================================================
+# PLAYBOOK: 99_validar_rstp_swacclim2_local.yml
+# =============================================================================
+# FASE 4 RSTP — Validación local de RSTP en SWACCLIM2
+# Solo lectura — NO modifica nada.
+# Ejecutar DENTRO de la VM SWACCLIM2:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/99_validar_rstp_swacclim2_local.yml -vv -K
+# =============================================================================
+
+- name: "VALIDAR RSTP | Local en SWACCLIM2"
+  hosts: swacclim2
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: "SAFE | Confirmar ejecución en SWACCLIM2"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname == "swacclim2"
+        fail_msg: "ERROR: Este playbook solo debe ejecutarse en SWACCLIM2."
+        success_msg: "OK: En SWACCLIM2"
+
+    - name: "VALIDAR | Cargar host_vars para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+
+    - name: "VALIDAR | rstp_enable en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} rstp_enable"
+      changed_when: false
+      register: val_rstp_enable
+
+    - name: "VALIDAR | Assert rstp_enable=true"
+      ansible.builtin.assert:
+        that:
+          - val_rstp_enable.stdout | trim == "true"
+        fail_msg: "FAIL: rstp_enable NO está en true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+        success_msg: "PASS: rstp_enable=true en {{ inventory_hostname }}/{{ rstp_bridge }}"
+
+    - name: "VALIDAR | other_config en {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-vsctl get bridge {{ rstp_bridge }} other_config"
+      changed_when: false
+      register: val_rstp_config
+
+    - name: "VALIDAR | Assert prioridad {{ rstp_priority }} en other_config"
+      ansible.builtin.assert:
+        that:
+          - rstp_priority | string in val_rstp_config.stdout
+        fail_msg: "FAIL: prioridad {{ rstp_priority }} no encontrada en {{ val_rstp_config.stdout }}"
+        success_msg: "PASS: rstp-priority={{ rstp_priority }} confirmado"
+
+    - name: "VALIDAR | ovs-appctl rstp/show {{ rstp_bridge }}"
+      ansible.builtin.command: "ovs-appctl rstp/show {{ rstp_bridge }}"
+      changed_when: false
+      register: val_rstp_show
+      failed_when: false
+
+    - name: "VALIDAR | Mostrar estado RSTP"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          bridge: "{{ rstp_bridge }}"
+          rstp_enable: "{{ val_rstp_enable.stdout }}"
+          other_config: "{{ val_rstp_config.stdout }}"
+          rstp_show: "{{ val_rstp_show.stdout_lines | default([]) }}"
+          rol_esperado: "{{ rstp_expected_role }}"
