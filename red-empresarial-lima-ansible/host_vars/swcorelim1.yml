@@ -344,6 +344,11 @@ fase4c_bridge: "br-core"
 fase4c_rstp_priority: 4096          # Root Bridge principal
 fase4c_expected_role: "root-primary"
 
+fase4c_auto_enable_interfaces: false
+fase4c_interfaces_to_keep_down:
+  - ens38
+  - ens39
+
 # Bonds actuales a eliminar del bridge br-core
 fase4c_deprecated_bonds:
   - name: bond-pcsc1-sc2

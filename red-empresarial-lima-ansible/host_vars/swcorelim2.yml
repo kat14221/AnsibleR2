@@ -243,6 +243,11 @@ fase4c_bridge: "br-core"
 fase4c_rstp_priority: 8192          # Root Bridge secundario
 fase4c_expected_role: "root-secondary"
 
+fase4c_auto_enable_interfaces: false
+fase4c_interfaces_to_keep_down:
+  - ens40
+  - ens41
+
 # Bonds actuales a eliminar del bridge br-core
 # NOTA: El script jhalex-swcorelim2-ovs.sh usa ens41 como primario en bond-pcsc2-sd2
 fase4c_deprecated_bonds:
@@ -250,7 +255,7 @@ fase4c_deprecated_bonds:
     members: [ens36, ens37]
     description: "Core2 ↔ Core1"
   - name: bond-pcsc2-sd2
-    members: [ens41, ens40]
+    members: [ens40, ens41]
     description: "Core2 ↔ Dist2"
 
 # Interfaces físicas a agregar como puertos OVS independientes con RSTP

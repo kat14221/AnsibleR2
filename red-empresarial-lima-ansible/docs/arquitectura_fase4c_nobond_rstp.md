@@ -105,6 +105,7 @@ La migración es disruptiva a nivel L2 y debe hacerse paso a paso localmente en 
 1. **Mantener Keepalived APAGADO**: Obligatorio para evitar flapeos VRRP durante los cortes L2.
 2. **SWCORELIM1 (Local)**: Migración Core1.
 3. **SWCORELIM2 (Local)**: Migración Core2. *(Atención: No usar SSH desde Core1 hacia Core2, el enlace se cortará. Usar consola ESXi).*
+> ⚠️ **ENLACES CORE-DISTRIBUCIÓN DOWN**: Durante esta ejecución en los Core, los enlaces hacia Distribución (`ens38`, `ens39` en Core1; `ens40`, `ens41` en Core2) no se levantan automáticamente. Esto es intencional para evitar bucles. Solo el enlace Core-Core se levanta.
 4. **Validar Core-Core**: Comprobar convergencia RSTP entre ambos cores.
 5. **SWDISTLIM1 y SWDISTLIM2 (Local)**.
 6. **SWACCLIM1 y SWACCLIM2 (Local)**.

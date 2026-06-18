@@ -735,6 +735,7 @@ git pull --rebase origin main
 ### Paso 3 — Aplicar Migración en Core
 
 > ⚠️ **NO USAR SSH desde SWCORELIM1 a SWCORELIM2**. El enlace Core-Core se interrumpirá durante la migración. Utiliza la consola de la VM (ESXi).
+> ⚠️ **ENLACES CORE-DISTRIBUCIÓN DOWN**: Durante esta ejecución en los Core, los enlaces hacia Distribución (`ens38`, `ens39` en Core1; `ens40`, `ens41` en Core2) no se levantan automáticamente. Esto es intencional para evitar bucles.
 
 **En SWCORELIM1:**
 ```bash
@@ -753,6 +754,7 @@ ansible-playbook -i inventories/local/hosts.yml playbooks/07_migrar_nobond_rstp_
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swcorelim1_local.yml -vv -K
 ansible-playbook -i inventories/local/hosts.yml playbooks/99_validar_nobond_rstp_swcorelim2_local.yml -vv -K
 ```
+
 
 ### Paso 4 — Aplicar Migración en Distribución
 

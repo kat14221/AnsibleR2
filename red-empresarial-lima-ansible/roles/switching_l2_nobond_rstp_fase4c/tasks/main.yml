@@ -292,10 +292,21 @@
 # BLOQUE 8 — AGREGAR INTERFACES FÍSICAS COMO PUERTOS OVS INDEPENDIENTES
 # =============================================================================
 
-- name: "FASE4C ADD-PORT | Asegurar interfaz {{ item }} UP en Linux"
+- name: "FASE4C ADD-PORT | Asegurar interfaz {{ item }} UP en Linux (si auto_enable es true)"
   ansible.builtin.command: "ip link set {{ item }} up"
   changed_when: true
   loop: "{{ fase4c_rstp_interfaces }}"
+  when: 
+    - fase4c_auto_enable_interfaces | bool
+    - item not in fase4c_interfaces_to_keep_down
+  failed_when: false
+  tags: rstp_ifaces
+
+- name: "FASE4C ADD-PORT | Forzar interfaz {{ item }} DOWN en Linux (si está en keep_down)"
+  ansible.builtin.command: "ip link set {{ item }} down"
+  changed_when: true
+  loop: "{{ fase4c_rstp_interfaces }}"
+  when: item in fase4c_interfaces_to_keep_down
   failed_when: false
   tags: rstp_ifaces
 
@@ -544,3 +555,18 @@
     ('-------' not in val_rstp_show_after.stdout and
      val_rstp_show_after.stdout_lines | default([]) | length < 5)
   tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Estado administrativo de enlaces físicos (ip -br link)"
+  ansible.builtin.command: "ip -br link show {{ fase4c_rstp_interfaces | join(' ') }}"
+  changed_when: false
+  register: val_ip_br_link
+  failed_when: false
+  tags: rstp_validate
+
+- name: "FASE4C VALIDAR | Mostrar tabla de estado de enlaces físicos"
+  ansible.builtin.debug:
+    msg: |
+      Estado de las interfaces RSTP configuradas en el bridge:
+      {{ val_ip_br_link.stdout_lines | join('\n') }}
+  tags: rstp_validate
+

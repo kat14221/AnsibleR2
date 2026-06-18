@@ -58,6 +58,14 @@ fase4c_rstp_interfaces: []
 fase4c_interface_costs: {}
 
 # -----------------------------------------------------------------------
+# Control de estado de interfaces físicas (UP/DOWN)
+# auto_enable_interfaces: si true, levanta las interfaces físicas. Si false, no altera.
+# interfaces_to_keep_down: lista de interfaces que se forzarán a DOWN (útil para enlaces inter-switch)
+# -----------------------------------------------------------------------
+fase4c_auto_enable_interfaces: true
+fase4c_interfaces_to_keep_down: []
+
+# -----------------------------------------------------------------------
 # Puertos edge — hosts finales directamente conectados
 # Se marcan admin-edge=true para evitar negociación RSTP
 # -----------------------------------------------------------------------
