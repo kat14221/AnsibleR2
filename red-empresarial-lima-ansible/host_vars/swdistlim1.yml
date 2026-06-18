@@ -203,3 +203,50 @@ fase4c_interface_costs:
 # Sin hosts finales directamente en Distribución en esta fase
 fase4c_edge_interfaces: []
 
+
+# =============================================================================
+# FASE 4C.2 — Persistencia y Failover Controlado
+# =============================================================================
+fase4c2_enabled: true
+fase4c2_bridge: "br-dist"
+
+fase4c2_ports_up:
+  - ens34
+  - ens42
+
+fase4c2_ports_down:
+  - ens37
+  - ens40
+  - ens41
+  - ens43
+  - ens44
+  - ens45
+
+fase4c2_expected_no_bonds:
+  - bond-pcsc1-sd1
+  - bond-pcsd1-sd2
+  - bond-pcsd1-sa1
+  - bond-pcsd1-sa2
+
+fase4c2_failover_links:
+  - name: dist1_core1
+    primary: ens34
+    backup: ens37
+    test_method: link
+    requires_peer_action: true
+    peer_switch: swcorelim1
+    peer_link_name: core1_dist1
+    peer_primary: ens38
+    peer_backup: ens39
+    description: "Failover Dist1-Core1"
+
+  - name: dist1_acc1
+    primary: ens42
+    backup: ens43
+    test_method: link
+    requires_peer_action: true
+    peer_switch: swacclim1
+    peer_link_name: acc1_dist1
+    peer_primary: ens34
+    peer_backup: ens35
+    description: "Failover Dist1-Access1"

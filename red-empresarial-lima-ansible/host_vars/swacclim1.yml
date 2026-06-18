@@ -142,6 +142,35 @@ fase4c_expected_role: "access"
 fase4c_auto_enable_interfaces: true
 fase4c_interfaces_to_keep_down: []
 
+# Bonds actuales a eliminar del bridge br-acc
+fase4c_deprecated_bonds:
+  - name: bond-pcsd1-sa1
+    members: [ens34, ens35]
+    description: "Acc1 ↔ Dist1 (uplink primario)"
+  - name: bond-pcsa1-sd2
+    members: [ens36, ens37]
+    description: "Acc1 ↔ Dist2 (uplink redundante)"
+
+# Interfaces físicas a agregar como puertos OVS independientes con RSTP
+fase4c_rstp_interfaces:
+  - ens34    # Acc1 ↔ Dist1 — enlace 1 (preferido)
+  - ens35    # Acc1 ↔ Dist1 — enlace 2 (backup)
+  - ens36    # Acc1 ↔ Dist2 — enlace 1 (redundante preferido)
+  - ens37    # Acc1 ↔ Dist2 — enlace 2 (redundante backup)
+
+# Path costs:
+#   Uplink a Dist1: 100/110 — RSTP preferirá Dist1
+#   Uplink a Dist2: 200/210 — RSTP pondrá en Discarding; activa si Dist1 cae
+fase4c_interface_costs:
+  ens34: 100    # Dist1 enlace primario — Forwarding esperado
+  ens35: 110    # Dist1 enlace backup — Discarding/Alternate esperado
+  ens36: 200    # Dist2 enlace 1 — desventajado (redundante)
+  ens37: 210    # Dist2 enlace 2 — más desventajado
+
+# Sin hosts finales en br-acc todavía (se agregarán en fase de acceso completo)
+fase4c_edge_interfaces: []
+
+
 # =============================================================================
 # FASE 4C.2 — Persistencia y Failover Controlado
 # =============================================================================
@@ -171,33 +200,3 @@ fase4c2_failover_links:
     peer_primary: ens42
     peer_backup: ens43
     description: "Failover Access1-Dist1"
-
-
-# Bonds actuales a eliminar del bridge br-acc
-fase4c_deprecated_bonds:
-  - name: bond-pcsd1-sa1
-    members: [ens34, ens35]
-    description: "Acc1 ↔ Dist1 (uplink primario)"
-  - name: bond-pcsa1-sd2
-    members: [ens36, ens37]
-    description: "Acc1 ↔ Dist2 (uplink redundante)"
-
-# Interfaces físicas a agregar como puertos OVS independientes con RSTP
-fase4c_rstp_interfaces:
-  - ens34    # Acc1 ↔ Dist1 — enlace 1 (preferido)
-  - ens35    # Acc1 ↔ Dist1 — enlace 2 (backup)
-  - ens36    # Acc1 ↔ Dist2 — enlace 1 (redundante preferido)
-  - ens37    # Acc1 ↔ Dist2 — enlace 2 (redundante backup)
-
-# Path costs:
-#   Uplink a Dist1: 100/110 — RSTP preferirá Dist1
-#   Uplink a Dist2: 200/210 — RSTP pondrá en Discarding; activa si Dist1 cae
-fase4c_interface_costs:
-  ens34: 100    # Dist1 enlace primario — Forwarding esperado
-  ens35: 110    # Dist1 enlace backup — Discarding/Alternate esperado
-  ens36: 200    # Dist2 enlace 1 — desventajado (redundante)
-  ens37: 210    # Dist2 enlace 2 — más desventajado
-
-# Sin hosts finales en br-acc todavía (se agregarán en fase de acceso completo)
-fase4c_edge_interfaces: []
-
