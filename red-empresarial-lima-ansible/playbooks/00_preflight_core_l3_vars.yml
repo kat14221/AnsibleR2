@@ -1,0 +1,95 @@
+---
+# =============================================================================
+# PLAYBOOK: 00_preflight_core_l3_vars.yml
+# =============================================================================
+#
+# Playbook de SOLO LECTURA — no modifica red, no toca servicios, no ejecuta rol.
+# Valida que las variables Core L3 están completas en ambos hosts.
+#
+# Ejecutar SIEMPRE antes de cualquier migración Core L3:
+#   ansible-playbook -i inventories/local/hosts.yml \
+#     playbooks/00_preflight_core_l3_vars.yml -vv -k
+#
+# =============================================================================
+
+- name: "PREFLIGHT :: Validar variables Core L3 — SWCORELIM1 y SWCORELIM2"
+  hosts:
+    - swcorelim1
+    - swcorelim2
+  gather_facts: true
+  become: false
+  serial: 1
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Carga explícita de host_vars por inventory_hostname
+    # -------------------------------------------------------------------------
+    - name: "PREFLIGHT | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+
+    # -------------------------------------------------------------------------
+    # Resumen de variables cargadas (siempre visible aunque el assert pase)
+    # -------------------------------------------------------------------------
+    - name: "PREFLIGHT | Resumen de variables cargadas en {{ inventory_hostname }}"
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          ansible_hostname: "{{ ansible_hostname | default('no_fact') }}"
+          core_l3_enabled: "{{ core_l3_enabled | default('NO_DEFINIDO') }}"
+          default_routes: "{{ default_routes | default([]) }}"
+          default_routes_count: "{{ default_routes | default([]) | length }}"
+          svis_count: "{{ svis | default([]) | length }}"
+          vrrp_state: "{{ vrrp_state | default('NO_DEFINIDO') }}"
+          vrrp_priority: "{{ vrrp_priority | default('NO_DEFINIDO') }}"
+          core_vrrp_interface: "{{ core_vrrp_interface | default('NO_DEFINIDO') }}"
+          core_vrrp_src_ip: "{{ core_vrrp_src_ip | default('NO_DEFINIDO') }}"
+          core_vrrp_peer_ip: "{{ core_vrrp_peer_ip | default('NO_DEFINIDO') }}"
+          vrrp_auth_pass_len: "{{ vrrp_auth_pass | default('') | length }}"
+
+    # -------------------------------------------------------------------------
+    # Assert principal — falla si cualquier variable requerida está ausente
+    # -------------------------------------------------------------------------
+    - name: "PREFLIGHT | Validar variables Core L3 requeridas en {{ inventory_hostname }}"
+      ansible.builtin.assert:
+        that:
+          - core_l3_enabled is defined
+          - core_l3_enabled | bool
+          - default_routes is defined
+          - default_routes | length > 0
+          - svis is defined
+          - svis | length == 9
+          - vrrp_state is defined
+          - vrrp_priority is defined
+          - core_vrrp_interface is defined
+          - core_vrrp_src_ip is defined and core_vrrp_src_ip | length > 0
+          - core_vrrp_peer_ip is defined and core_vrrp_peer_ip | length > 0
+          - vrrp_auth_pass is defined
+          - vrrp_auth_pass | length > 0
+          - vrrp_auth_pass | length <= 8
+        fail_msg: >-
+          ERROR PREFLIGHT: faltan variables Core L3 en host_vars/{{ inventory_hostname }}.yml.
+          Verifica el resumen de la tarea anterior para identificar qué variable está
+          ausente o vacía. NO ejecutes la migración hasta que este preflight pase.
+        success_msg: "OK PREFLIGHT: variables Core L3 completas en {{ inventory_hostname }}."
+
+    # -------------------------------------------------------------------------
+    # Verificación de nombres de host (inventario vs sistema operativo)
+    # -------------------------------------------------------------------------
+    - name: "PREFLIGHT | Verificar coincidencia inventory_hostname vs hostname del SO"
+      ansible.builtin.debug:
+        msg:
+          inventory_hostname: "{{ inventory_hostname }}"
+          ansible_hostname: "{{ ansible_hostname | default('sin_facts') }}"
+          coinciden: "{{ inventory_hostname == ansible_hostname | default(inventory_hostname) }}"
+
+    - name: "PREFLIGHT | Advertir si inventory_hostname y hostname del SO no coinciden"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname is defined
+          - ansible_hostname == inventory_hostname
+        fail_msg: >-
+          ADVERTENCIA: El hostname del SO ({{ ansible_hostname }}) NO coincide con
+          inventory_hostname ({{ inventory_hostname }}). Esto puede causar que Ansible
+          no cargue host_vars automáticamente. Usa siempre include_vars explícito.
+        success_msg: "OK: inventory_hostname coincide con hostname del SO ({{ ansible_hostname }})."

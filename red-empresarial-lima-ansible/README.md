@@ -280,7 +280,123 @@ ansible-playbook \
 - No ejecutar si fallan los ping hacia RLIM1/RLIM2.
 - No ejecutar si `br-core` no existe.
 - No ejecutar si no existen los bonds de Fase 2 (`bond-pcsc1-sd1`, `bond-pcsc2-sd2`, `bond-pcsc1-sc2`).
-- No usar doble `-e @host_vars/swcorelim1.yml -e @host_vars/swcorelim2.yml` en validaciones multi-host.
+- **NUNCA usar `-e core_l3_enabled=true` como workaround.** Las variables deben estar completas en `host_vars/`.
+- **NUNCA usar `-e @host_vars/swcorelimX.yml`.** Los playbooks cargan las variables explícitamente.
+
+### Causa raíz del error `default_routes is defined and (default_routes | length) > 0`
+
+Ansible carga `host_vars/<hostname>.yml` automáticamente **solo si `inventory_hostname` coincide exactamente con el nombre del archivo**. Si el hostname del SO es distinto al nombre en el inventario, o si el playbook corre desde un controller remoto sin el inventario correcto, Ansible usa los `defaults/main.yml` del rol (`default_routes: []`) y el assert falla.
+
+**Solución estructural:** todos los playbooks Core L3 usan `include_vars` explícito en `pre_tasks` para forzar la carga correcta.
+
+### Preparación desde Windows
+
+```bash
+git status
+git add playbooks/00_preflight_core_l3_vars.yml \
+        playbooks/04_migrar_core_l3_vrrp_estable.yml \
+        playbooks/03_configurar_swcorelim1_l3.yml \
+        playbooks/03_configurar_swcorelim2_l3.yml \
+        playbooks/03_configurar_core_l3_fase3.yml \
+        roles/core_l3_fase3/tasks/main.yml \
+        README.md
+git commit -m "fix: carga explicita host vars y preflight core l3"
+git push
+```
+
+### Actualizar el repo en el equipo ejecutor
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+BRANCH=$(git branch --show-current)
+git status
+git pull --rebase origin $BRANCH
+```
+
+### Verificaciones previas
+
+```bash
+cd ~/AnsibleR2/red-empresarial-lima-ansible
+ansible-playbook --version
+ansible -i inventories/local/hosts.yml swcorelim1 -m ping -k -K
+ansible -i inventories/local/hosts.yml swcorelim2 -m ping -k -K
+```
+
+### ORDEN SEGURO DE EJECUCIÓN
+
+```bash
+# ─────────────────────────────────────────────────────────────────────────
+# PASO 1 — Verificar variables ANTES de tocar servicios (solo lectura)
+# ─────────────────────────────────────────────────────────────────────────
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/00_preflight_core_l3_vars.yml -vv -k
+
+# ─────────────────────────────────────────────────────────────────────────
+# PASO 2 — Syntax-check (no ejecuta nada en remoto)
+# ─────────────────────────────────────────────────────────────────────────
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/00_preflight_core_l3_vars.yml --syntax-check
+
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/04_migrar_core_l3_vrrp_estable.yml --syntax-check
+
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_vlans_core_l3_fase3.yml --syntax-check
+
+# ─────────────────────────────────────────────────────────────────────────
+# PASO 3 — Ejecutar migración limpia (solo si pasos 1 y 2 son OK)
+# ─────────────────────────────────────────────────────────────────────────
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/04_migrar_core_l3_vrrp_estable.yml -vv -k -K
+
+# ─────────────────────────────────────────────────────────────────────────
+# PASO 4 — Validar todas las VLANs tras migración
+# ─────────────────────────────────────────────────────────────────────────
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_vlans_core_l3_fase3.yml -vv -k -K
+```
+
+### Flujo manual alternativo (host por host)
+
+```bash
+# Aplicar primero SWCORELIM1:
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/03_configurar_swcorelim1_l3.yml -vv -k -K
+
+# Validar SWCORELIM1:
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_swcorelim1_l3.yml -vv -k -K
+
+# Aplicar SWCORELIM2:
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/03_configurar_swcorelim2_l3.yml -vv -k -K
+
+# Validar SWCORELIM2:
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_swcorelim2_l3.yml -vv -k -K
+
+# Validación final ambos Core:
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_core_l3_fase3.yml -vv -k -K
+ansible-playbook -i inventories/local/hosts.yml \
+  playbooks/99_validar_vlans_core_l3_fase3.yml -vv -k -K
+```
+
+### Criterios de éxito
+
+- Keepalived activo en ambos Core.
+- SWCORELIM1 (MASTER, prioridad 150) mantiene todos los VIPs.
+- SWCORELIM2 (BACKUP, prioridad 100) no mantiene VIPs mientras SWCORELIM1 esté activo.
+- SVIs presentes en ambos Core y `ip_forward=1`.
+- VIPs responden sin pérdida: `192.168.20.1`, `192.168.40.1`, `192.168.80.1`.
+- Conectividad a Internet desde ambos Core: `ping 8.8.8.8`.
+- No se elimina ni modifica ningún bond/trunk de Fase 2.
+
+---
+
+> **Autor:** Proyecto Infraestructura Red Empresarial Lima
+> **Versión:** 1.1.0 | **Última actualización:** 2026-06-18
+
 
 ### Preparación desde OpenCode/Windows
 

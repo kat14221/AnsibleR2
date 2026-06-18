@@ -5,12 +5,14 @@
 #
 # Ejecutar:
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/03_configurar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K
+#     playbooks/03_configurar_swcorelim2_l3.yml -vv -k -K
 #
 # Dry-run:
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/03_configurar_swcorelim2_l3.yml -e @host_vars/swcorelim2.yml -vv -K --check --diff
+#     playbooks/03_configurar_swcorelim2_l3.yml -vv -k -K --check --diff
 #
+# NOTA: NO usar -e @host_vars/swcorelim2.yml. Las variables se cargan
+# explícitamente via include_vars en pre_tasks para garantizar precedencia.
 # =============================================================================
 
 - name: "SWCORELIM2 :: Fase 3 — Core L3 (SVIs + VRRP + rutas)"
@@ -25,6 +27,26 @@
           - inventory_hostname == "swcorelim2"
         fail_msg: "ERROR: Este playbook solo debe ejecutarse en swcorelim2."
         success_msg: "OK: Host correcto: {{ inventory_hostname }}"
+      tags: always
+
+    - name: "PRECHECK | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Mostrar host y variables críticas cargadas"
+      ansible.builtin.debug:
+        msg:
+          inventory_hostname: "{{ inventory_hostname }}"
+          ansible_hostname: "{{ ansible_hostname | default('no_fact') }}"
+          core_l3_enabled: "{{ core_l3_enabled | default('NO_DEFINIDO') }}"
+          default_routes_count: "{{ default_routes | default([]) | length }}"
+          svis_count: "{{ svis | default([]) | length }}"
+          vrrp_state: "{{ vrrp_state | default('NO_DEFINIDO') }}"
+          vrrp_priority: "{{ vrrp_priority | default('NO_DEFINIDO') }}"
+          core_vrrp_interface: "{{ core_vrrp_interface | default('NO_DEFINIDO') }}"
+          core_vrrp_src_ip: "{{ core_vrrp_src_ip | default('NO_DEFINIDO') }}"
+          core_vrrp_peer_ip: "{{ core_vrrp_peer_ip | default('NO_DEFINIDO') }}"
       tags: always
 
     - name: "PRE | Verificar que br-core existe antes de Fase 3"

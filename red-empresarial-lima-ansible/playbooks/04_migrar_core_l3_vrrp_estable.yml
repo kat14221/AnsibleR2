@@ -3,34 +3,135 @@
 # PLAYBOOK: 04_migrar_core_l3_vrrp_estable.yml
 # =============================================================================
 #
+# ORDEN SEGURO:
+#   1. Preflight en ambos hosts (solo valida variables, NO toca servicios)
+#   2. Detener keepalived en SWCORELIM2 (solo si preflight pasa)
+#   3. Aplicar rol en SWCORELIM1 → validar VIPs
+#   4. Aplicar rol en SWCORELIM2 → validar estado BACKUP
+#   5. Validar VLANs finales
+#
 # Ejecutar:
 #   ansible-playbook -i inventories/local/hosts.yml \
-#     playbooks/04_migrar_core_l3_vrrp_estable.yml -vv -K
+#     playbooks/04_migrar_core_l3_vrrp_estable.yml -vv -k -K
 #
+# NUNCA usar -e core_l3_enabled=true como workaround.
+# Las variables deben estar completas en host_vars/<hostname>.yml.
 # =============================================================================
 
-- name: "SWCORELIM2 :: Preparar migración VRRP estable"
+# ---------------------------------------------------------------------------
+# PLAY 1 — PREFLIGHT: Validar variables en AMBOS hosts antes de tocar nada
+# ---------------------------------------------------------------------------
+- name: "PREFLIGHT :: Validar variables Core L3 en SWCORELIM1 y SWCORELIM2"
+  hosts:
+    - swcorelim1
+    - swcorelim2
+  gather_facts: true
+  become: false
+  serial: 1
+
+  tasks:
+    - name: "PREFLIGHT | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PREFLIGHT | Mostrar variables críticas cargadas en {{ inventory_hostname }}"
+      ansible.builtin.debug:
+        msg:
+          inventory_hostname: "{{ inventory_hostname }}"
+          ansible_hostname: "{{ ansible_hostname | default('no_fact') }}"
+          core_l3_enabled: "{{ core_l3_enabled | default('NO_DEFINIDO') }}"
+          default_routes_count: "{{ default_routes | default([]) | length }}"
+          svis_count: "{{ svis | default([]) | length }}"
+          vrrp_state: "{{ vrrp_state | default('NO_DEFINIDO') }}"
+          vrrp_priority: "{{ vrrp_priority | default('NO_DEFINIDO') }}"
+          core_vrrp_interface: "{{ core_vrrp_interface | default('NO_DEFINIDO') }}"
+          core_vrrp_src_ip: "{{ core_vrrp_src_ip | default('NO_DEFINIDO') }}"
+          core_vrrp_peer_ip: "{{ core_vrrp_peer_ip | default('NO_DEFINIDO') }}"
+          vrrp_auth_pass_len: "{{ vrrp_auth_pass | default('') | length }}"
+      tags: always
+
+    - name: "PREFLIGHT | Validar todas las variables requeridas en {{ inventory_hostname }}"
+      ansible.builtin.assert:
+        that:
+          - core_l3_enabled is defined
+          - core_l3_enabled | bool
+          - default_routes is defined
+          - default_routes | length > 0
+          - svis is defined
+          - svis | length == 9
+          - vrrp_state is defined
+          - vrrp_priority is defined
+          - core_vrrp_interface is defined
+          - core_vrrp_src_ip is defined and core_vrrp_src_ip | length > 0
+          - core_vrrp_peer_ip is defined and core_vrrp_peer_ip | length > 0
+          - vrrp_auth_pass is defined
+          - vrrp_auth_pass | length > 0
+          - vrrp_auth_pass | length <= 8
+        fail_msg: >-
+          ERROR PREFLIGHT: faltan variables Core L3 en host_vars/{{ inventory_hostname }}.yml.
+          Revisa la tarea de debug anterior para identificar qué variable falta o está vacía.
+          MIGRACIÓN ABORTADA ANTES DE TOCAR SERVICIOS.
+        success_msg: "OK PREFLIGHT: todas las variables Core L3 correctas en {{ inventory_hostname }}."
+      tags: always
+
+# ---------------------------------------------------------------------------
+# PLAY 2 — Detener keepalived en SWCORELIM2 (solo llega aquí si preflight OK)
+# ---------------------------------------------------------------------------
+- name: "SWCORELIM2 :: Preparar migración VRRP — detener keepalived"
   hosts: swcorelim2
   gather_facts: true
   become: true
   serial: 1
 
   tasks:
+    - name: "PREFLIGHT | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
     - name: "PRE-MIG | Detener keepalived temporalmente en SWCORELIM2"
       ansible.builtin.systemd:
         name: keepalived
         state: stopped
       failed_when: false
 
+# ---------------------------------------------------------------------------
+# PLAY 3 — Aplicar rol Core L3 en SWCORELIM1
+# ---------------------------------------------------------------------------
 - name: "SWCORELIM1 :: Aplicar configuración limpia Core L3"
   hosts: swcorelim1
   gather_facts: true
   become: true
   serial: 1
 
+  pre_tasks:
+    - name: "PRECHECK | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Confirmar variables críticas en SWCORELIM1"
+      ansible.builtin.debug:
+        msg:
+          inventory_hostname: "{{ inventory_hostname }}"
+          core_l3_enabled: "{{ core_l3_enabled | default('NO_DEFINIDO') }}"
+          default_routes_count: "{{ default_routes | default([]) | length }}"
+          svis_count: "{{ svis | default([]) | length }}"
+          vrrp_state: "{{ vrrp_state | default('NO_DEFINIDO') }}"
+      tags: always
+
+    - name: "PRECHECK | Verificar que br-core existe en SWCORELIM1"
+      ansible.builtin.command: "ovs-vsctl br-exists {{ core_bridge | default('br-core') }}"
+      changed_when: false
+      tags: always
+
   roles:
     - role: core_l3_fase3
 
+# ---------------------------------------------------------------------------
+# PLAY 4 — Validar VIPs en SWCORELIM1 tras migración
+# ---------------------------------------------------------------------------
 - name: "SWCORELIM1 :: Validar ownership de VIPs tras migración"
   hosts: swcorelim1
   gather_facts: true
@@ -38,6 +139,11 @@
   serial: 1
 
   tasks:
+    - name: "PREFLIGHT | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
     - name: "POST-MIG | Esperar estabilización en SWCORELIM1"
       ansible.builtin.pause:
         seconds: 20
@@ -55,15 +161,42 @@
         success_msg: "PASS: SWCORELIM1 tiene el VIP {{ item.vip }}."
       loop: "{{ svis }}"
 
+# ---------------------------------------------------------------------------
+# PLAY 5 — Aplicar rol Core L3 en SWCORELIM2
+# ---------------------------------------------------------------------------
 - name: "SWCORELIM2 :: Aplicar configuración limpia Core L3"
   hosts: swcorelim2
   gather_facts: true
   become: true
   serial: 1
 
+  pre_tasks:
+    - name: "PRECHECK | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
+    - name: "PRECHECK | Confirmar variables críticas en SWCORELIM2"
+      ansible.builtin.debug:
+        msg:
+          inventory_hostname: "{{ inventory_hostname }}"
+          core_l3_enabled: "{{ core_l3_enabled | default('NO_DEFINIDO') }}"
+          default_routes_count: "{{ default_routes | default([]) | length }}"
+          svis_count: "{{ svis | default([]) | length }}"
+          vrrp_state: "{{ vrrp_state | default('NO_DEFINIDO') }}"
+      tags: always
+
+    - name: "PRECHECK | Verificar que br-core existe en SWCORELIM2"
+      ansible.builtin.command: "ovs-vsctl br-exists {{ core_bridge | default('br-core') }}"
+      changed_when: false
+      tags: always
+
   roles:
     - role: core_l3_fase3
 
+# ---------------------------------------------------------------------------
+# PLAY 6 — Validar estado BACKUP en SWCORELIM2
+# ---------------------------------------------------------------------------
 - name: "SWCORELIM2 :: Validar rol BACKUP tras migración"
   hosts: swcorelim2
   gather_facts: true
@@ -71,6 +204,11 @@
   serial: 1
 
   tasks:
+    - name: "PREFLIGHT | Cargar host_vars explícitamente para {{ inventory_hostname }}"
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../host_vars/{{ inventory_hostname }}.yml"
+      tags: always
+
     - name: "POST-MIG | Esperar estabilización en SWCORELIM2"
       ansible.builtin.pause:
         seconds: 30
@@ -88,4 +226,7 @@
         success_msg: "PASS: SWCORELIM2 no tiene el VIP {{ item.vip }}."
       loop: "{{ svis }}"
 
+# ---------------------------------------------------------------------------
+# PLAY 7 — Validación final de VLANs
+# ---------------------------------------------------------------------------
 - import_playbook: 99_validar_vlans_core_l3_fase3.yml

@@ -9,6 +9,24 @@
     success_msg: "OK: core_l3_enabled=true"
   tags: always
 
+- name: "CORE-L3 | Debug variables requeridas antes de validar"
+  ansible.builtin.debug:
+    msg:
+      inventory_hostname: "{{ inventory_hostname }}"
+      core_l3_enabled: "{{ core_l3_enabled | default('NO_DEFINIDO') }}"
+      core_bridge: "{{ core_bridge | default('NO_DEFINIDO') }}"
+      core_l3_script_path: "{{ core_l3_script_path | default('NO_DEFINIDO') }}"
+      core_l3_service_name: "{{ core_l3_service_name | default('NO_DEFINIDO') }}"
+      default_routes_count: "{{ default_routes | default([]) | length }}"
+      svis_count: "{{ svis | default([]) | length }}"
+      vrrp_state: "{{ vrrp_state | default('NO_DEFINIDO') }}"
+      vrrp_priority: "{{ vrrp_priority | default('NO_DEFINIDO') }}"
+      core_vrrp_interface: "{{ core_vrrp_interface | default('NO_DEFINIDO') }}"
+      core_vrrp_src_ip: "{{ core_vrrp_src_ip | default('NO_DEFINIDO') }}"
+      core_vrrp_peer_ip: "{{ core_vrrp_peer_ip | default('NO_DEFINIDO') }}"
+      vrrp_auth_pass: "{{ 'DEFINIDO (len=' ~ (vrrp_auth_pass | default('') | length) ~ ')' if vrrp_auth_pass is defined else 'NO_DEFINIDO' }}"
+  tags: always
+
 - name: "CORE-L3 | Validar variables requeridas"
   ansible.builtin.assert:
     that:
@@ -27,7 +45,8 @@
     fail_msg: >-
       ERROR CRÍTICO: faltan variables para Fase 3.
       Revisa host_vars/{{ inventory_hostname }}.yml (core_l3_* / svis / default_routes / vrrp_* / core_vrrp_*).
-    success_msg: "OK: variables críticas presentes para Fase 3."
+      Ver tarea debug anterior para saber exactamente qué variable falta o está vacía.
+    success_msg: "OK: variables críticas presentes para Fase 3 en {{ inventory_hostname }}."
   tags: always
 
 - name: "CORE-L3 | Instalar keepalived (si no está instalado)"
