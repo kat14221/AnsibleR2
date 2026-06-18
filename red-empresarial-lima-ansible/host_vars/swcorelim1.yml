@@ -337,42 +337,35 @@ rstp_edge_ports: []
 # Causa raíz: OVS 3.3.x emite:
 #   ovs-vswitchd: cannot enable RSTP on bonds, disabling
 # Solución: eliminar bonds y agregar interfaces físicas como puertos OVS
-# independientes. RSTP opera sobre interfaces físicas, no sobre bonds.
+# =============================================================================
+# FASE 4C — Migración No-Bond RSTP (switching_l2_nobond_rstp_fase4c)
 # =============================================================================
 fase4c_nobond_rstp_enabled: true
 fase4c_bridge: "br-core"
-fase4c_rstp_priority: 4096          # Root Bridge principal
+fase4c_rstp_priority: 4096
 fase4c_expected_role: "root-primary"
+
+fase4c_deprecated_bonds:
+  - name: bond-pcsc1-sc2
+    members: [ens36, ens37]
+  - name: bond-pcsc1-sd1
+    members: [ens38, ens39]
+
+fase4c_rstp_interfaces:
+  - ens36
+  - ens37
+  - ens38
+  - ens39
+
+fase4c_interface_costs:
+  ens36: 100
+  ens37: 110
+  ens38: 100
+  ens39: 110
 
 fase4c_auto_enable_interfaces: false
 fase4c_interfaces_to_keep_down:
   - ens38
   - ens39
-
-# Bonds actuales a eliminar del bridge br-core
-fase4c_deprecated_bonds:
-  - name: bond-pcsc1-sc2
-    members: [ens36, ens37]
-    description: "Core1 ↔ Core2"
-  - name: bond-pcsc1-sd1
-    members: [ens38, ens39]
-    description: "Core1 ↔ Dist1"
-
-# Interfaces físicas a agregar como puertos OVS independientes con RSTP
-fase4c_rstp_interfaces:
-  - ens36    # Core1 ↔ Core2 — enlace 1 (preferido)
-  - ens37    # Core1 ↔ Core2 — enlace 2 (backup)
-  - ens38    # Core1 ↔ Dist1 — enlace 1 (preferido)
-  - ens39    # Core1 ↔ Dist1 — enlace 2 (backup)
-
-# Path costs: primer enlace del par=100, segundo=110
-# RSTP preferirá el cost 100 (Forwarding) y pondrá cost 110 en Discarding/Alternate
-fase4c_interface_costs:
-  ens36: 100    # Core-Core enlace primario — Forwarding esperado
-  ens37: 110    # Core-Core enlace backup — Discarding/Alternate esperado
-  ens38: 100    # Core-Dist1 enlace primario — Forwarding esperado
-  ens39: 110    # Core-Dist1 enlace backup — Discarding/Alternate esperado
-
-# Sin hosts finales directamente en Core
 fase4c_edge_interfaces: []
 

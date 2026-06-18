@@ -14,6 +14,9 @@
   gather_facts: true
   become: true
 
+  vars_files:
+    - "../host_vars/swacclim2.yml"
+
   pre_tasks:
     - name: "SAFE | Confirmar VM correcta — debe ser SWACCLIM2"
       ansible.builtin.assert:
@@ -25,14 +28,30 @@
         success_msg: "OK: Ejecutando en SWACCLIM2 (hostname={{ ansible_hostname }})"
       tags: always
 
-    - name: "PRECHECK | Mostrar resumen de variables FASE 4C"
-      ansible.builtin.debug:
-        msg:
-          host: "{{ inventory_hostname }}"
-          bridge: "{{ fase4c_bridge }}"
-          priority: "{{ fase4c_rstp_priority }}"
-          bonds_a_eliminar: "{{ fase4c_deprecated_bonds | map(attribute='name') | list }}"
-          interfaces_a_agregar: "{{ fase4c_rstp_interfaces }}"
+    - name: "PRECHECK FASE4C | Validar variables cargadas desde host_vars"
+      ansible.builtin.assert:
+        that:
+          - fase4c_nobond_rstp_enabled | bool
+          - fase4c_bridge is defined
+          - fase4c_bridge | length > 0
+          - fase4c_rstp_priority is defined
+          - fase4c_rstp_priority | int > 0
+          - fase4c_rstp_interfaces is defined
+          - fase4c_rstp_interfaces | length > 0
+          - fase4c_deprecated_bonds is defined
+          - fase4c_deprecated_bonds | length > 0
+        fail_msg: >-
+          ERROR: Variables Fase 4C no cargadas correctamente.
+          bridge={{ fase4c_bridge | default('UNDEF') }},
+          priority={{ fase4c_rstp_priority | default('UNDEF') }},
+          interfaces={{ fase4c_rstp_interfaces | default([]) }},
+          bonds={{ fase4c_deprecated_bonds | default([]) }}.
+        success_msg: >-
+          OK: Variables Fase 4C cargadas correctamente.
+          bridge={{ fase4c_bridge }},
+          priority={{ fase4c_rstp_priority }},
+          interfaces={{ fase4c_rstp_interfaces }},
+          bonds={{ fase4c_deprecated_bonds | map(attribute='name') | list }}.
       tags: always
 
   roles:

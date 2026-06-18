@@ -7,6 +7,9 @@
   gather_facts: false
   become: true
 
+  vars_files:
+    - "../host_vars/swcorelim2.yml"
+
   tasks:
     - name: "VALIDAR | rstp_enable debe ser true"
       ansible.builtin.command: "ovs-vsctl get bridge {{ fase4c_bridge }} rstp_enable"
