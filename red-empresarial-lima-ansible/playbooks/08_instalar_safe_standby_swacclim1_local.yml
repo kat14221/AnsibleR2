@@ -1,0 +1,26 @@
+---
+- name: "FASE 4C.2 | Instalar Safe Standby & Failover SWACCLIM1"
+  hosts: swacclim1
+  gather_facts: true
+  become: true
+  connection: local
+
+  vars:
+    ansible_connection: local
+    ansible_host: 127.0.0.1
+    ansible_python_interpreter: /usr/bin/python3
+
+  vars_files:
+    - "../host_vars/swacclim1.yml"
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta"
+      ansible.builtin.assert:
+        that:
+          - ansible_hostname | lower == 'swacclim1'
+        fail_msg: "ERROR: Este playbook debe ejecutarse SOLO en SWACCLIM1. Host actual: {{ ansible_hostname }}"
+        success_msg: "OK: Ejecutando en SWACCLIM1"
+      tags: always
+
+  roles:
+    - role: switching_l2_safe_standby_fase4c2

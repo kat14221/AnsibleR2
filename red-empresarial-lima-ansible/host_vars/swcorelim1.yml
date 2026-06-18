@@ -369,3 +369,44 @@ fase4c_interfaces_to_keep_down:
   - ens39
 fase4c_edge_interfaces: []
 
+# =============================================================================
+# FASE 4C.2 — Persistencia y Failover Controlado
+# =============================================================================
+fase4c2_enabled: true
+fase4c2_bridge: "br-core"
+
+fase4c2_ports_up:
+  - ens36
+  - ens38
+
+fase4c2_ports_down:
+  - ens37
+  - ens39
+
+fase4c2_expected_no_bonds:
+  - bond-pcsc1-sc2
+  - bond-pcsc1-sd1
+
+fase4c2_failover_links:
+  - name: core1_core2
+    primary: ens36
+    backup: ens37
+    test_method: ping
+    test_target: 10.255.21.2
+    requires_peer_action: true
+    peer_switch: swcorelim2
+    peer_link_name: core2_core1
+    peer_primary: ens36
+    peer_backup: ens37
+    description: "Failover enlace Core1-Core2"
+
+  - name: core1_dist1
+    primary: ens38
+    backup: ens39
+    test_method: link
+    requires_peer_action: true
+    peer_switch: swdistlim1
+    peer_link_name: dist1_core1
+    peer_primary: ens34
+    peer_backup: ens37
+    description: "Failover enlace Core1-Dist1"

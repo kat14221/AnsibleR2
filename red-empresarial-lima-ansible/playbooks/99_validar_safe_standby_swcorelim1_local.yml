@@ -1,0 +1,52 @@
+---
+- name: "FASE 4C.2 | Validar Safe Standby & Failover SWCORELIM1"
+  hosts: swcorelim1
+  gather_facts: false
+  become: true
+  connection: local
+
+  vars:
+    ansible_connection: local
+    ansible_host: 127.0.0.1
+    ansible_python_interpreter: /usr/bin/python3
+
+  vars_files:
+    - "../host_vars/swcorelim1.yml"
+
+  tasks:
+    - name: "VALIDAR | Systemd service existe"
+      ansible.builtin.stat:
+        path: /etc/systemd/system/jhalex-fase4c2-safe-topology.service
+      register: p_svc
+      failed_when: not p_svc.stat.exists
+
+    - name: "VALIDAR | Systemd service está habilitado"
+      ansible.builtin.command: "systemctl is-enabled jhalex-fase4c2-safe-topology.service"
+      changed_when: false
+      register: p_svc_enabled
+
+    - name: "VALIDAR | Script de persistencia existe y ejecutable"
+      ansible.builtin.stat:
+        path: /usr/local/sbin/jhalex-fase4c2-safe-topology.sh
+      register: p_script1
+      failed_when: not p_script1.stat.exists or not p_script1.stat.executable
+
+    - name: "VALIDAR | Script de failover existe y ejecutable"
+      ansible.builtin.stat:
+        path: /usr/local/sbin/jhalex-link-failover
+      register: p_script2
+      failed_when: not p_script2.stat.exists or not p_script2.stat.executable
+
+    - name: "VALIDAR | jhalex-link-failover list"
+      ansible.builtin.command: "/usr/local/sbin/jhalex-link-failover list"
+      changed_when: false
+      register: p_list
+
+    - name: "VALIDAR | jhalex-link-failover status"
+      ansible.builtin.command: "/usr/local/sbin/jhalex-link-failover status"
+      changed_when: false
+      register: p_status
+
+    - name: "MOSTRAR | Resultado status"
+      ansible.builtin.debug:
+        msg: "{{ p_status.stdout_lines }}"

@@ -715,6 +715,12 @@ Los enlaces hacia distribución pueden estar activos, pero se recomienda la sigu
 ### Causa de la Migración
 OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El bridge ignoraba el protocolo de redundancia, generando bucles L2. En la Fase 4C, se desmantelan los bonds y se usan los dos enlaces físicos como puertos OVS individuales administrados directamente por RSTP.
 
+- **Fase 4B (RSTP OVS)**: Roles `switching_l2_clean_rstp_fase4b` y variables asociadas para establecer Root bridges L2 y prioridades.
+- **Fase 4C (No-Bond RSTP)**: Eliminación de bonds y migración a interfaces físicas independientes para soportar RSTP en OVS.
+- **Fase 4C.2 (Safe Standby & Failover)**: Persistencia de topología segura sin bucles y habilitación de failover manual coordinado mediante CLI local, debido a las limitaciones de RSTP en entornos virtualizados.
+
+### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
+
 ### Paso 1 — Preparar y pushear desde Windows/OpenCode
 
 ```bash

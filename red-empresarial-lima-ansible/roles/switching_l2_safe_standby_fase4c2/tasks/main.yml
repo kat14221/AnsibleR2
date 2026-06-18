@@ -1,0 +1,79 @@
+---
+# =============================================================================
+# TASKS — roles/switching_l2_safe_standby_fase4c2
+# =============================================================================
+# Instala los scripts y el servicio systemd para la Fase 4C.2.
+
+- name: "FASE4C2 PRECHECK | Validar habilitación"
+  ansible.builtin.assert:
+    that:
+      - fase4c2_enabled | bool
+    fail_msg: "Fase 4C.2 no está habilitada para este host."
+  tags: always
+
+- name: "FASE4C2 PRECHECK | Validar variables de bridge"
+  ansible.builtin.assert:
+    that:
+      - fase4c2_bridge is defined
+      - fase4c2_bridge | length > 0
+    fail_msg: "La variable fase4c2_bridge es obligatoria."
+  tags: always
+
+- name: "FASE4C2 OVS | Validar existencia del bridge"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ fase4c2_bridge }}"
+  changed_when: false
+  tags: ovs
+
+- name: "FASE4C2 OVS | Validar ausencia de bonds antiguos"
+  ansible.builtin.command: "ovs-vsctl port-to-br {{ item }}"
+  register: val_bond
+  failed_when: val_bond.rc == 0
+  changed_when: false
+  loop: "{{ fase4c2_expected_no_bonds }}"
+  tags: ovs
+
+- name: "FASE4C2 LINK | Asegurar puertos principales UP"
+  ansible.builtin.command: "ip link set {{ item }} up"
+  changed_when: true
+  loop: "{{ fase4c2_ports_up }}"
+  tags: link
+
+- name: "FASE4C2 LINK | Asegurar puertos standby DOWN"
+  ansible.builtin.command: "ip link set {{ item }} down"
+  changed_when: true
+  loop: "{{ fase4c2_ports_down }}"
+  tags: link
+
+- name: "FASE4C2 SYSTEMD | Instalar script de persistencia segura"
+  ansible.builtin.template:
+    src: jhalex-fase4c2-safe-topology.sh.j2
+    dest: /usr/local/sbin/jhalex-fase4c2-safe-topology.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags: systemd
+
+- name: "FASE4C2 SYSTEMD | Instalar script de failover manual"
+  ansible.builtin.template:
+    src: jhalex-link-failover.sh.j2
+    dest: /usr/local/sbin/jhalex-link-failover
+    owner: root
+    group: root
+    mode: '0755'
+  tags: systemd
+
+- name: "FASE4C2 SYSTEMD | Crear servicio systemd"
+  ansible.builtin.template:
+    src: jhalex-fase4c2-safe-topology.service.j2
+    dest: /etc/systemd/system/jhalex-fase4c2-safe-topology.service
+    owner: root
+    group: root
+    mode: '0644'
+  tags: systemd
+
+- name: "FASE4C2 SYSTEMD | Habilitar servicio systemd"
+  ansible.builtin.systemd:
+    name: jhalex-fase4c2-safe-topology.service
+    daemon_reload: true
+    enabled: true
+  tags: systemd

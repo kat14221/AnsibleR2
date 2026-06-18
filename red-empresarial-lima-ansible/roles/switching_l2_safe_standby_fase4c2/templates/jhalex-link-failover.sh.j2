@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# =============================================================================
+# JHALEX - Link Failover Tool (Fase 4C.2)
+# =============================================================================
+set -euo pipefail
+
+COMMAND=${1:-"help"}
+LINK_NAME=${2:-""}
+
+function show_help() {
+    echo "Uso: sudo jhalex-link-failover <comando> [link_name]"
+    echo ""
+    echo "Comandos disponibles:"
+    echo "  help               Muestra esta ayuda"
+    echo "  status             Muestra el estado actual de los puertos y OVS"
+    echo "  list               Muestra los enlaces configurados para failover"
+    echo "  test <link>        Ejecuta la prueba de conectividad del enlace actual"
+    echo "  backup <link>      Cambia el tráfico hacia la interfaz de backup"
+    echo "  primary <link>     Cambia el tráfico hacia la interfaz principal"
+    echo ""
+    echo "ADVERTENCIA: En enlaces inter-switch, el failover DEBE ejecutarse en"
+    echo "ambos extremos para no perder conectividad."
+}
+
+function run_status() {
+    echo "================================================================="
+    echo "ESTADO DE ENLACES Y OVS - {{ inventory_hostname }}"
+    echo "================================================================="
+    echo "Bridge: {{ fase4c2_bridge }}"
+    echo "Puertos UP esperados:"
+{% for port in fase4c2_ports_up %}
+    echo "  - {{ port }}"
+{% endfor %}
+    echo "Puertos DOWN (standby) esperados:"
+{% for port in fase4c2_ports_down %}
+    echo "  - {{ port }}"
+{% endfor %}
+    echo "-----------------------------------------------------------------"
+    echo "Estado actual (ip -br link):"
+    ip -br link show | grep -E "({% for port in fase4c2_ports_up + fase4c2_ports_down %}{{ port }}{% if not loop.last %}|{% endif %}{% endfor %})" || true
+    echo "-----------------------------------------------------------------"
+    echo "Puertos en el bridge OVS:"
+    ovs-vsctl list-ports {{ fase4c2_bridge }}
+    echo "================================================================="
+}
+
+function run_list() {
+    echo "================================================================="
+    echo "ENLACES DISPONIBLES PARA FAILOVER"
+    echo "================================================================="
+{% for link in fase4c2_failover_links %}
+    echo "{{ link.name }}: primary={{ link.primary }} backup={{ link.backup }} test_method={{ link.test_method | default('ping') }}{% if link.test_method | default('ping') == 'ping' %} target={{ link.test_target }}{% endif %}"
+    echo "  Desc: {{ link.description }}"
+{% if link.requires_peer_action %}
+    echo "  ⚠️ REQUIERE PEER: {{ link.peer_switch }} -> jhalex-link-failover <cmd> {{ link.peer_link_name }}"
+{% endif %}
+    echo ""
+{% endfor %}
+    echo "================================================================="
+}
+
+function run_test() {
+    local target_link=$1
+    if [[ -z "$target_link" ]]; then
+        echo "Error: Debes especificar el nombre del enlace. Usa 'list' para ver las opciones."
+        exit 1
+    fi
+
+    echo "[JHALEX] Iniciando prueba para: $target_link..."
+    
+{% for link in fase4c2_failover_links %}
+    if [[ "$target_link" == "{{ link.name }}" ]]; then
+{% if link.test_method | default('ping') == 'ping' %}
+        echo "[TEST] Método: PING a {{ link.test_target }}"
+        if ping -c 5 -W 2 {{ link.test_target }}; then
+            echo "[TEST OK] Conectividad exitosa hacia {{ link.test_target }}."
+            return 0
+        else
+            echo "[TEST FAIL] Falló el ping hacia {{ link.test_target }}."
+            return 1
+        fi
+{% elif link.test_method == 'link' %}
+        echo "[TEST] Método: LINK (estado de la interfaz)"
+        echo "[TEST] Verificando primary {{ link.primary }}:"
+        ip -br link show {{ link.primary }}
+        echo "Operstate: $(cat /sys/class/net/{{ link.primary }}/operstate 2>/dev/null || echo 'N/A')"
+        echo "[TEST] Verificando backup {{ link.backup }}:"
+        ip -br link show {{ link.backup }}
+        echo "Operstate: $(cat /sys/class/net/{{ link.backup }}/operstate 2>/dev/null || echo 'N/A')"
+        return 0
+{% else %}
+        echo "[TEST] Método: NONE (no se realiza prueba activa)"
+        return 0
+{% endif %}
+    fi
+{% endfor %}
+
+    echo "Error: Enlace '$target_link' no encontrado."
+    exit 1
+}
+
+function run_failover() {
+    local direction=$1
+    local target_link=$2
+    if [[ -z "$target_link" ]]; then
+        echo "Error: Debes especificar el nombre del enlace."
+        exit 1
+    fi
+
+{% for link in fase4c2_failover_links %}
+    if [[ "$target_link" == "{{ link.name }}" ]]; then
+        local primary="{{ link.primary }}"
+        local backup="{{ link.backup }}"
+        
+        echo "================================================================="
+        echo "FAILOVER MANUAL - ${direction^^} ($target_link)"
+        echo "================================================================="
+{% if link.requires_peer_action %}
+        echo "ADVERTENCIA: Este enlace tiene un extremo remoto."
+        echo "Para completar el failover debes ejecutar también:"
+        echo "  sudo jhalex-link-failover $direction {{ link.peer_link_name }}"
+        echo "en {{ link.peer_switch }}."
+        echo "-----------------------------------------------------------------"
+{% endif %}
+
+        if [[ "$direction" == "backup" ]]; then
+            echo "[1/4] Bajando enlace primario ($primary)..."
+            ip link set $primary down
+            
+            echo "[2/4] Esperando 2 segundos (Break before make)..."
+            sleep 2
+            
+            echo "[3/4] Levantando enlace de backup ($backup)..."
+            ip link set $backup up
+        else
+            echo "[1/4] Bajando enlace de backup ($backup)..."
+            ip link set $backup down
+            
+            echo "[2/4] Esperando 2 segundos (Break before make)..."
+            sleep 2
+            
+            echo "[3/4] Levantando enlace primario ($primary)..."
+            ip link set $primary up
+        fi
+
+        echo "[4/4] Esperando 5 segundos para STP/L2..."
+        sleep 5
+        
+        echo ""
+        echo "Ejecutando prueba de verificación..."
+        if ! run_test "$target_link"; then
+            echo ""
+            echo "⚠️  ATENCIÓN: La prueba post-failover falló."
+            if [[ "$direction" == "backup" ]]; then
+                echo "Considera realizar un ROLLBACK ejecutando:"
+                echo "  sudo jhalex-link-failover primary $target_link"
+            else
+                echo "Considera volver al backup ejecutando:"
+                echo "  sudo jhalex-link-failover backup $target_link"
+            fi
+        fi
+        
+        echo "================================================================="
+        echo "FAILOVER COMPLETADO."
+        exit 0
+    fi
+{% endfor %}
+
+    echo "Error: Enlace '$target_link' no encontrado."
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Main Routing
+# -----------------------------------------------------------------------------
+if [[ "$EUID" -ne 0 ]] && [[ "$COMMAND" != "help" ]] && [[ "$COMMAND" != "list" ]] && [[ "$COMMAND" != "status" ]]; then
+   echo "Debes ejecutar este script con sudo para modificar interfaces."
+   exit 1
+fi
+
+case "$COMMAND" in
+    status)
+        run_status
+        ;;
+    list)
+        run_list
+        ;;
+    test)
+        run_test "$LINK_NAME"
+        ;;
+    backup|primary)
+        run_failover "$COMMAND" "$LINK_NAME"
+        ;;
+    help|*)
+        show_help
+        ;;
+esac

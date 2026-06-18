@@ -1,0 +1,7 @@
+---
+fase4c2_enabled: false
+fase4c2_bridge: ""
+fase4c2_ports_up: []
+fase4c2_ports_down: []
+fase4c2_expected_no_bonds: []
+fase4c2_failover_links: []

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# =============================================================================
+# JHALEX - Fase 4C.2 Safe Topology Persistence
+# =============================================================================
+set -euo pipefail
+
+echo "[JHALEX] Aplicando topologia segura Fase 4C.2..."
+
+# Wait for network interfaces to settle
+sleep 10
+
+# Puertos principales a levantar
+{% for port in fase4c2_ports_up %}
+echo "[JHALEX] Levantando puerto principal {{ port }}..."
+ip link set {{ port }} up
+{% endfor %}
+
+# Puertos standby a bajar (evita loops)
+{% for port in fase4c2_ports_down %}
+echo "[JHALEX] Forzando puerto standby {{ port }} a DOWN..."
+ip link set {{ port }} down
+{% endfor %}
+
+echo "-----------------------------------------------------------------"
+echo "[JHALEX] Estado final de interfaces físicas:"
+ip -br link show
+echo "-----------------------------------------------------------------"
+echo "[JHALEX] Puertos OVS en {{ fase4c2_bridge }}:"
+ovs-vsctl list-ports {{ fase4c2_bridge }}
+echo "-----------------------------------------------------------------"
+echo "[JHALEX] Topología segura aplicada correctamente."

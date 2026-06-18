@@ -142,6 +142,37 @@ fase4c_expected_role: "access"
 fase4c_auto_enable_interfaces: true
 fase4c_interfaces_to_keep_down: []
 
+# =============================================================================
+# FASE 4C.2 — Persistencia y Failover Controlado
+# =============================================================================
+fase4c2_enabled: true
+fase4c2_bridge: "br-acc"
+
+fase4c2_ports_up:
+  - ens34
+
+fase4c2_ports_down:
+  - ens35
+  - ens36
+  - ens37
+
+fase4c2_expected_no_bonds:
+  - bond-pcsd1-sa1
+  - bond-pcsa1-sd2
+
+fase4c2_failover_links:
+  - name: acc1_dist1
+    primary: ens34
+    backup: ens35
+    test_method: link
+    requires_peer_action: true
+    peer_switch: swdistlim1
+    peer_link_name: dist1_acc1
+    peer_primary: ens42
+    peer_backup: ens43
+    description: "Failover Access1-Dist1"
+
+
 # Bonds actuales a eliminar del bridge br-acc
 fase4c_deprecated_bonds:
   - name: bond-pcsd1-sa1

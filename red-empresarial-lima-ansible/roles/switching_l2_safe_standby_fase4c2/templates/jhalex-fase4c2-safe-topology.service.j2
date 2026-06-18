@@ -1,0 +1,12 @@
+[Unit]
+Description=JHALEX Fase 4C.2 Safe Topology Persistence
+After=network-online.target openvswitch-switch.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/jhalex-fase4c2-safe-topology.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
