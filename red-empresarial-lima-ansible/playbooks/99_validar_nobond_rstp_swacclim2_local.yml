@@ -6,6 +6,12 @@
   hosts: swacclim2
   gather_facts: false
   become: true
+  connection: local
+
+  vars:
+    ansible_connection: local
+    ansible_host: 127.0.0.1
+    ansible_python_interpreter: /usr/bin/python3
 
   vars_files:
     - "../host_vars/swacclim2.yml"
