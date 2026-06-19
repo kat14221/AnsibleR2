@@ -307,7 +307,7 @@ fase4c2_failover_links:
     peer_primary: ens36
     peer_backup: ens37
     description: "Failover enlace Core2-Dist2"
-\n
+
 # =============================================================================
 # FASE 5 — VRRP / Keepalived Balanceado por Grupos de VLAN
 # =============================================================================
