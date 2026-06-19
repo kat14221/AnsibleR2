@@ -721,6 +721,18 @@ OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El br
 - **Fase 5 (VRRP / Keepalived Balanceado)**: Configuración de alta disponibilidad Activo/Activo para ruteo L3. El tráfico de las VLANs se balancea entre SWCORELIM1 (Grupo A) y SWCORELIM2 (Grupo B) empleando VRRP unicast sobre las interfaces SVI.
 - **Fase 6A (Uplink Trunk H2)**: Habilitación del enlace de red `ens41` en modo trunk desde `SWACCLIM1` hacia el Hypervisor ESXi H2, otorgando visibilidad a las VMs de Servicios.
 
+### Configuración del Laboratorio Windows (Fase 7 Local)
+- **FASE 7 LOCAL — DC DNS DHCP Lima Windows Server 2025**: Despliegue de los servicios base de infraestructura (AD, DNS, DHCP) 100% automatizados con PowerShell local (sin WinRM ni Ansible remoto) para asegurar un aprovisionamiento ininterrumpido en la VM `DC-DNS-DHCP-LIMA`.
+  - **Ejecución local en la VM Windows**:
+    ```powershell
+    mkdir C:\JHALEX
+    cd C:\JHALEX
+    git clone https://github.com/kat14221/AnsibleR2.git
+    cd C:\JHALEX\AnsibleR2\red-empresarial-lima-ansible\windows\dc_dns_dhcp_lima_local
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    .\Run-Fase7-Menu.ps1
+    ```
+
 ### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
 
 ### Paso 1 — Preparar y pushear desde Windows/OpenCode
