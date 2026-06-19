@@ -13,6 +13,21 @@
   vars_files:
     - "../host_vars/swcorelim2.yml"
 
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWCORELIM2"
+      ansible.builtin.command: hostname
+      register: fase5_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en SWCORELIM2"
+      ansible.builtin.assert:
+        that:
+          - fase5_hostname_check.stdout == "swcorelim2"
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook solo debe ejecutarse dentro de SWCORELIM2.
+          Host actual={{ fase5_hostname_check.stdout }}.
+        success_msg: "OK: Ejecutando en SWCORELIM2."
+
   tasks:
     - name: "VALIDAR | Systemd keepalived activo"
       ansible.builtin.command: "systemctl is-active keepalived"

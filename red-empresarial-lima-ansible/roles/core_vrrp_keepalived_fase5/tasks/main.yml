@@ -55,11 +55,31 @@
   register: p_svi_pings
   ignore_errors: false
 
+- name: "PRECHECK | Construir lista de VIPs sin máscara"
+  ansible.builtin.set_fact:
+    fase5_vip_ips: "{{ fase5_vrrp_instances | map(attribute='vip') | map('regex_replace', '/.*$', '') | list }}"
+
 - name: "PRECHECK | Validar que las VIPs no existan actualmente configuradas"
-  ansible.builtin.shell: "ip addr show | grep -E '192.168.10.1|192.168.20.1|192.168.30.1|192.168.40.1|192.168.50.17|192.168.60.1|192.168.70.1|192.168.80.1|192.168.99.1'"
-  register: p_vips_exist
-  failed_when: p_vips_exist.rc == 0
+  ansible.builtin.shell: |
+    set -euo pipefail
+    local_ips="$(ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1)"
+    found=""
+    for vip in {{ fase5_vip_ips | join(' ') }}; do
+      if echo "$local_ips" | grep -Fxq "$vip"; then
+        found="$found $vip"
+      fi
+    done
+    echo "$found"
+  args:
+    executable: /bin/bash
+  register: fase5_existing_vips
   changed_when: false
+  failed_when: fase5_existing_vips.stdout | trim | length > 0
+
+- name: "PRECHECK | Reportar VIPs ya existentes"
+  ansible.builtin.fail:
+    msg: "ERROR: Estas VIPs ya están configuradas antes de iniciar Keepalived: {{ fase5_existing_vips.stdout }}"
+  when: fase5_existing_vips.stdout | trim | length > 0
 
 - name: "PRECHECK | Validar que Keepalived esté inactivo"
   ansible.builtin.command: "systemctl is-active keepalived"

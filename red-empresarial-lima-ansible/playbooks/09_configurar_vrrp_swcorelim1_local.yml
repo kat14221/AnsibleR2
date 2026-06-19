@@ -13,5 +13,20 @@
   vars_files:
     - "../host_vars/swcorelim1.yml"
 
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWCORELIM1"
+      ansible.builtin.command: hostname
+      register: fase5_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en SWCORELIM1"
+      ansible.builtin.assert:
+        that:
+          - fase5_hostname_check.stdout == "swcorelim1"
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook solo debe ejecutarse dentro de SWCORELIM1.
+          Host actual={{ fase5_hostname_check.stdout }}.
+        success_msg: "OK: Ejecutando en SWCORELIM1."
+
   roles:
     - core_vrrp_keepalived_fase5
