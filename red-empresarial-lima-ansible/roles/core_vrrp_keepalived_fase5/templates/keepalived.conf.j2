@@ -24,10 +24,6 @@ vrrp_instance {{ inst.name }} {
         {{ inst.vip }}
     }
 
-    track_interface {
-        {{ inst.interface }}
-    }
-
     garp_master_delay 1
     garp_master_repeat 3
     garp_master_refresh 10
