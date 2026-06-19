@@ -1,0 +1,36 @@
+global_defs {
+    router_id {{ inventory_hostname }}
+}
+
+{% for inst in fase5_vrrp_instances %}
+vrrp_instance {{ inst.name }} {
+    state {{ inst.state }}
+    interface {{ inst.interface }}
+    virtual_router_id {{ inst.vrid }}
+    priority {{ inst.priority }}
+    advert_int 1
+
+    unicast_src_ip {{ inst.local_real_ip }}
+    unicast_peer {
+        {{ inst.peer_real_ip }}
+    }
+
+    authentication {
+        auth_type PASS
+        auth_pass {{ fase5_vrrp_auth_pass }}
+    }
+
+    virtual_ipaddress {
+        {{ inst.vip }}
+    }
+
+    track_interface {
+        {{ inst.interface }}
+    }
+
+    garp_master_delay 1
+    garp_master_repeat 3
+    garp_master_refresh 10
+}
+
+{% endfor %}

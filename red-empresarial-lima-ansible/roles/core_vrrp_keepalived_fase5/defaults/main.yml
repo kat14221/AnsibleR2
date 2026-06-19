@@ -1,0 +1,5 @@
+---
+fase5_vrrp_enabled: false
+fase5_keepalived_service_enabled: false
+fase5_vrrp_auth_pass: "JHXVRRP5"
+fase5_vrrp_instances: []

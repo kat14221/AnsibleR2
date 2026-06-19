@@ -718,6 +718,7 @@ OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El br
 - **Fase 4B (RSTP OVS)**: Roles `switching_l2_clean_rstp_fase4b` y variables asociadas para establecer Root bridges L2 y prioridades.
 - **Fase 4C (No-Bond RSTP)**: Eliminación de bonds y migración a interfaces físicas independientes para soportar RSTP en OVS.
 - **Fase 4C.2 (Safe Standby & Failover)**: Persistencia de topología segura sin bucles y habilitación de failover manual coordinado mediante CLI local, debido a las limitaciones de RSTP en entornos virtualizados.
+- **Fase 5 (VRRP / Keepalived Balanceado)**: Configuración de alta disponibilidad Activo/Activo para ruteo L3. El tráfico de las VLANs se balancea entre SWCORELIM1 (Grupo A) y SWCORELIM2 (Grupo B) empleando VRRP unicast sobre las interfaces SVI.
 
 ### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
 

@@ -1,0 +1,82 @@
+---
+- name: "FASE 5 | Verificar que Fase 5 está habilitada"
+  ansible.builtin.assert:
+    that:
+      - fase5_vrrp_enabled | bool
+    msg: "FASE 5 no está habilitada (fase5_vrrp_enabled no es true)"
+
+- name: "PRECHECK | Validar que Keepalived está instalado"
+  ansible.builtin.command: "which keepalived"
+  changed_when: false
+  register: p_keepalived_which
+
+- name: "PRECHECK | Validar que Fase 4C.2 está enabled"
+  ansible.builtin.command: "systemctl is-enabled jhalex-fase4c2-safe-topology.service"
+  changed_when: false
+  register: p_fase4c2_enabled
+
+- name: "PRECHECK | Validar que jhalex-link-failover responde"
+  ansible.builtin.command: "/usr/local/sbin/jhalex-link-failover status"
+  changed_when: false
+  register: p_fase4c2_status
+
+- name: "PRECHECK | Validar existencia de interfaces SVI locales"
+  ansible.builtin.command: "ip link show {{ item.interface }}"
+  loop: "{{ fase5_vrrp_instances }}"
+  changed_when: false
+  register: p_svi_exist
+
+- name: "PRECHECK | Validar IPs reales locales en SVIs"
+  ansible.builtin.shell: "ip -br addr show {{ item.interface }} | grep {{ item.local_real_ip }}"
+  loop: "{{ fase5_vrrp_instances }}"
+  changed_when: false
+  register: p_svi_ips
+
+- name: "PRECHECK | Validar PING a peers desde SVIs locales"
+  ansible.builtin.command: "ping -I {{ item.interface }} -c 3 {{ item.peer_real_ip }}"
+  loop: "{{ fase5_vrrp_instances }}"
+  changed_when: false
+  register: p_svi_pings
+  ignore_errors: false
+
+- name: "PRECHECK | Validar que las VIPs no existan actualmente configuradas"
+  ansible.builtin.shell: "ip addr show | grep -E '192.168.10.1|192.168.20.1|192.168.30.1|192.168.40.1|192.168.50.17|192.168.60.1|192.168.70.1|192.168.80.1|192.168.99.1'"
+  register: p_vips_exist
+  failed_when: p_vips_exist.rc == 0
+  changed_when: false
+
+- name: "PRECHECK | Validar que Keepalived esté inactivo"
+  ansible.builtin.command: "systemctl is-active keepalived"
+  register: p_keepalived_active
+  failed_when: p_keepalived_active.rc == 0
+  changed_when: false
+  ignore_errors: true
+
+- name: "BACKUP | Respaldar configuración de Keepalived"
+  ansible.builtin.shell: "cp /etc/keepalived/keepalived.conf /etc/keepalived/keepalived.conf.bak_fase5_$(date +%Y%m%d%H%M%S)"
+  args:
+    creates: "/etc/keepalived/keepalived.conf.bak_fase5_done"
+  ignore_errors: true
+
+- name: "VALIDAR | Evitar herencia de VI_LIMA_CORE"
+  ansible.builtin.lineinfile:
+    path: /etc/keepalived/keepalived.conf
+    state: absent
+    regexp: '^.*VI_LIMA_CORE.*$'
+  ignore_errors: true
+
+- name: "CONFIGURAR | Generar keepalived.conf Fase 5"
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: '0644'
+
+- name: "VALIDAR | Verificar sintaxis de nueva config de Keepalived"
+  ansible.builtin.command: "keepalived -t -f /etc/keepalived/keepalived.conf"
+  changed_when: false
+
+- name: "SERVICIO | Configurar servicio Keepalived según variables (no arranca auto)"
+  ansible.builtin.systemd:
+    name: keepalived
+    enabled: "{{ fase5_keepalived_service_enabled }}"
+    state: stopped
