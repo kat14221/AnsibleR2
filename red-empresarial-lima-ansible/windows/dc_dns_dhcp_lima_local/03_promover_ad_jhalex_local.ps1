@@ -10,13 +10,13 @@ try {
     Write-Host "Dominio ya existe: $($Domain.DNSRoot)"
     exit 0
 } catch {
-    Write-Host "Dominio aún no existe. Continuando promoción..."
+    Write-Host "Dominio aun no existe. Continuando promocion..."
 }
 
-$SafeModePassword = Read-Host "Ingrese contraseña DSRM para recuperación de AD" -AsSecureString
+$SafeModePassword = Read-Host "Ingrese contrasena DSRM para recuperacion de AD" -AsSecureString
 
-Write-Host "Iniciando promoción del bosque AD $($JhalexConfig.DomainName)..."
-Write-Host "ATENCIÓN: Este proceso reiniciará automáticamente el servidor al finalizar."
+Write-Host "Iniciando promocion del bosque AD $($JhalexConfig.DomainName)..."
+Write-Host "ATENCION: Este proceso reiniciara automaticamente el servidor al finalizar."
 
 Install-ADDSForest `
     -DomainName $JhalexConfig.DomainName `
