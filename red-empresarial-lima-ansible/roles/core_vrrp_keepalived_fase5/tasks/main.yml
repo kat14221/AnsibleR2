@@ -10,10 +10,26 @@
   changed_when: false
   register: p_keepalived_which
 
+- name: "PRECHECK | Asegurar que la topología segura se aplicó (oneshot)"
+  ansible.builtin.systemd:
+    name: jhalex-fase4c2-safe-topology.service
+    state: started
+  ignore_errors: true
+
 - name: "PRECHECK | Validar que Fase 4C.2 está enabled"
   ansible.builtin.command: "systemctl is-enabled jhalex-fase4c2-safe-topology.service"
   changed_when: false
   register: p_fase4c2_enabled
+
+- name: "PRECHECK | Validar que enlaces principales están UP"
+  ansible.builtin.shell: "ip -br link show {{ item }} | grep -w UP"
+  loop: "{{ fase4c2_ports_up }}"
+  changed_when: false
+
+- name: "PRECHECK | Validar que enlaces standby están DOWN"
+  ansible.builtin.shell: "ip -br link show {{ item }} | grep -w DOWN"
+  loop: "{{ fase4c2_ports_down }}"
+  changed_when: false
 
 - name: "PRECHECK | Validar que jhalex-link-failover responde"
   ansible.builtin.command: "/usr/local/sbin/jhalex-link-failover status"
