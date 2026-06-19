@@ -1,0 +1,32 @@
+---
+- name: "FASE 6A | Configurar trunk H2 en SWACCLIM1"
+  hosts: swacclim1
+  gather_facts: true
+  become: true
+  connection: local
+
+  vars:
+    ansible_connection: local
+    ansible_host: 127.0.0.1
+    ansible_python_interpreter: /usr/bin/python3
+
+  vars_files:
+    - "../host_vars/swacclim1.yml"
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWACCLIM1"
+      ansible.builtin.command: hostname
+      register: fase6a_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en SWACCLIM1"
+      ansible.builtin.assert:
+        that:
+          - fase6a_hostname_check.stdout == "swacclim1"
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook solo debe ejecutarse dentro de SWACCLIM1.
+          Host actual={{ fase6a_hostname_check.stdout }}.
+        success_msg: "OK: Ejecutando en SWACCLIM1."
+
+  roles:
+    - access_h2_trunk_fase6a

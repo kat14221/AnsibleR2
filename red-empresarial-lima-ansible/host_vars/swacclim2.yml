@@ -201,3 +201,11 @@ fase4c2_failover_links:
     peer_primary: ens42
     peer_backup: ens43
     description: "Failover Access2-Dist2"
+# =============================================================================
+# FASE 6A — Uplink trunk hacia Hypervisor H2 Servicios
+# =============================================================================
+# Deshabilitado en SWACCLIM2 para evitar bucles L2 (topología sin STP en este enlace)
+fase6a_h2_trunk_enabled: false
+fase6a_h2_bridge: "br-acc"
+fase6a_h2_trunk_interface: "ens41"
+fase6a_h2_trunk_vlans: []

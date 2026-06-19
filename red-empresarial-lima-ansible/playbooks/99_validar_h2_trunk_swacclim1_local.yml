@@ -1,0 +1,75 @@
+---
+- name: "FASE 6A | Validar trunk H2 en SWACCLIM1"
+  hosts: swacclim1
+  gather_facts: false
+  become: true
+  connection: local
+
+  vars:
+    ansible_connection: local
+    ansible_host: 127.0.0.1
+    ansible_python_interpreter: /usr/bin/python3
+
+  vars_files:
+    - "../host_vars/swacclim1.yml"
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWACCLIM1"
+      ansible.builtin.command: hostname
+      register: fase6a_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en SWACCLIM1"
+      ansible.builtin.assert:
+        that:
+          - fase6a_hostname_check.stdout == "swacclim1"
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook solo debe ejecutarse dentro de SWACCLIM1.
+          Host actual={{ fase6a_hostname_check.stdout }}.
+        success_msg: "OK: Ejecutando en SWACCLIM1."
+
+  tasks:
+    - name: "VALIDAR | ens41 existe y está UP"
+      ansible.builtin.shell: "ip -br link show ens41 | grep -w UP"
+      changed_when: false
+
+    - name: "VALIDAR | ens41 pertenece a br-acc"
+      ansible.builtin.command: "ovs-vsctl list-ports br-acc"
+      register: p_br_ports
+      changed_when: false
+      failed_when: "'ens41' not in p_br_ports.stdout"
+
+    - name: "VALIDAR | No hay bonds recreados en br-acc"
+      ansible.builtin.assert:
+        that:
+          - "'bond' not in p_br_ports.stdout"
+        fail_msg: "ERROR: Se encontraron bonds en br-acc."
+        
+    - name: "VALIDAR | Obtener configuración de ens41"
+      ansible.builtin.command: "ovs-vsctl list port ens41"
+      register: p_ens41_port
+      changed_when: false
+
+    - name: "VALIDAR | vlan_mode=trunk"
+      ansible.builtin.assert:
+        that:
+          - "'vlan_mode           : trunk' in p_ens41_port.stdout"
+        fail_msg: "ERROR: ens41 no tiene vlan_mode=trunk."
+
+    - name: "VALIDAR | trunks contiene las VLANs esperadas"
+      ansible.builtin.assert:
+        that:
+          - "'trunks              : [10, 20, 30, 40, 50, 60, 70, 80, 99]' in p_ens41_port.stdout"
+        fail_msg: "ERROR: ens41 no tiene los trunks correctos."
+
+    - name: "VALIDAR | ens34 sigue UP"
+      ansible.builtin.shell: "ip -br link show ens34 | grep -w UP"
+      changed_when: false
+
+    - name: "VALIDAR | ens35, ens36, ens37 siguen DOWN"
+      ansible.builtin.shell: "ip -br link show {{ item }} | grep -w DOWN"
+      loop:
+        - ens35
+        - ens36
+        - ens37
+      changed_when: false

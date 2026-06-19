@@ -200,3 +200,19 @@ fase4c2_failover_links:
     peer_primary: ens42
     peer_backup: ens43
     description: "Failover Access1-Dist1"
+# =============================================================================
+# FASE 6A — Uplink trunk hacia Hypervisor H2 Servicios
+# =============================================================================
+fase6a_h2_trunk_enabled: true
+fase6a_h2_bridge: "br-acc"
+fase6a_h2_trunk_interface: "ens41"
+fase6a_h2_trunk_vlans:
+  - 10
+  - 20
+  - 30
+  - 40
+  - 50
+  - 60
+  - 70
+  - 80
+  - 99

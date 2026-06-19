@@ -1,0 +1,36 @@
+---
+- name: "FASE 6A | Verificar que Fase 6A está habilitada"
+  ansible.builtin.assert:
+    that:
+      - fase6a_h2_trunk_enabled | bool
+    msg: "FASE 6A no está habilitada (fase6a_h2_trunk_enabled no es true)"
+
+- name: "PRECHECK | Validar que el bridge exista"
+  ansible.builtin.command: "ovs-vsctl br-exists {{ fase6a_h2_bridge }}"
+  changed_when: false
+
+- name: "PRECHECK | Validar que la interfaz física exista"
+  ansible.builtin.command: "ip link show {{ fase6a_h2_trunk_interface }}"
+  changed_when: false
+
+- name: "CONFIGURAR | Levantar la interfaz física"
+  ansible.builtin.command: "ip link set {{ fase6a_h2_trunk_interface }} up"
+
+- name: "CONFIGURAR | Agregar la interfaz al bridge"
+  ansible.builtin.command: "ovs-vsctl --may-exist add-port {{ fase6a_h2_bridge }} {{ fase6a_h2_trunk_interface }}"
+
+- name: "CONFIGURAR | Configurar vlan_mode=trunk"
+  ansible.builtin.command: "ovs-vsctl set port {{ fase6a_h2_trunk_interface }} vlan_mode=trunk"
+
+- name: "CONFIGURAR | Configurar trunks permitidos"
+  ansible.builtin.command: "ovs-vsctl set port {{ fase6a_h2_trunk_interface }} trunks={{ fase6a_h2_trunk_vlans | join(',') }}"
+
+- name: "VALIDAR | Listar puertos del bridge"
+  ansible.builtin.command: "ovs-vsctl list-ports {{ fase6a_h2_bridge }}"
+  register: p_br_ports
+  changed_when: false
+  failed_when: fase6a_h2_trunk_interface not in p_br_ports.stdout
+
+- name: "VALIDAR | Obtener configuración del puerto trunk"
+  ansible.builtin.command: "ovs-vsctl list port {{ fase6a_h2_trunk_interface }}"
+  changed_when: false
