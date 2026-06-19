@@ -26,7 +26,8 @@
       changed_when: false
       
     - name: FASE 8 | Validar interfaces (IP)
-      ansible.builtin.command: ip -br addr show {{ fase8_dhcp_relay_interfaces | join(' ') }}
+      ansible.builtin.command: "ip -br addr show dev {{ item }}"
+      loop: "{{ fase8_dhcp_relay_interfaces }}"
       register: val_ip
       changed_when: false
 
@@ -71,7 +72,8 @@
           {{ val_host.stdout }}
           
           === INTERFACES ===
-          {{ val_ip.stdout }}
+          {% for res in val_ip.results %}{{ res.stdout }}
+          {% endfor %}
           
           === PING AL SERVIDOR DHCP ===
           {{ val_ping.stdout }}
