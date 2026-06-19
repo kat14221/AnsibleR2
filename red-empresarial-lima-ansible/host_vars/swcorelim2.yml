@@ -414,3 +414,22 @@ fase5_vrrp_instances:
     state: BACKUP
     priority: 100
     group: A
+
+# ============================================================
+# FASE 8 — DHCP Relay
+# ============================================================
+fase8_dhcp_relay_enabled: true
+fase8_dhcp_relay_server: "192.168.40.10"
+fase8_dhcp_relay_package: "isc-dhcp-relay"
+fase8_dhcp_relay_service: "isc-dhcp-relay"
+fase8_dhcp_relay_interfaces:
+  - "svi-vlan10"
+  - "svi-vlan20"
+  - "svi-vlan30"
+  - "svi-vlan60"
+  - "svi-vlan70"
+  - "svi-vlan80"
+  - "svi-vlan99"
+fase8_dhcp_relay_excluded_interfaces:
+  - "svi-vlan40"
+  - "svi-vlan50"

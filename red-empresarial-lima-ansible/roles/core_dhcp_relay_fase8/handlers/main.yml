@@ -1,0 +1,7 @@
+---
+# handlers file for core_dhcp_relay_fase8
+
+- name: Restart isc-dhcp-relay
+  ansible.builtin.systemd:
+    name: "{{ fase8_dhcp_relay_service }}"
+    state: restarted

@@ -1,0 +1,9 @@
+---
+# defaults for core_dhcp_relay_fase8
+
+fase8_dhcp_relay_enabled: false
+fase8_dhcp_relay_server: ""
+fase8_dhcp_relay_package: "isc-dhcp-relay"
+fase8_dhcp_relay_service: "isc-dhcp-relay"
+fase8_dhcp_relay_interfaces: []
+fase8_dhcp_relay_excluded_interfaces: []

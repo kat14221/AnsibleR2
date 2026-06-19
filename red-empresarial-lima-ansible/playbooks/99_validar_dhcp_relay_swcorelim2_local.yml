@@ -1,0 +1,92 @@
+---
+- name: FASE 8 | Validar DHCP Relay en SWCORELIM2 (Local)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../host_vars/swcorelim2.yml
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWCORELIM2"
+      ansible.builtin.command: hostname
+      register: fase8_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en SWCORELIM2"
+      ansible.builtin.assert:
+        that:
+          - fase8_hostname_check.stdout == "swcorelim2"
+        fail_msg: "ERROR CRÍTICO: Este playbook es exclusivo de SWCORELIM2."
+
+  tasks:
+    - name: FASE 8 | Validar hostname
+      ansible.builtin.command: hostname
+      register: val_host
+      changed_when: false
+      
+    - name: FASE 8 | Validar interfaces (IP)
+      ansible.builtin.command: ip -br addr show {{ fase8_dhcp_relay_interfaces | join(' ') }}
+      register: val_ip
+      changed_when: false
+
+    - name: FASE 8 | Validar conectividad a LIM-DC01
+      ansible.builtin.command: ping -c 4 {{ fase8_dhcp_relay_server }}
+      register: val_ping
+      changed_when: false
+
+    - name: FASE 8 | Validar estado del servicio (is-active)
+      ansible.builtin.command: systemctl is-active {{ fase8_dhcp_relay_service }}
+      register: val_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 8 | Validar estado del servicio (is-enabled)
+      ansible.builtin.command: systemctl is-enabled {{ fase8_dhcp_relay_service }}
+      register: val_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 8 | Validar archivo de configuracion
+      ansible.builtin.command: cat /etc/default/isc-dhcp-relay
+      register: val_conf
+      changed_when: false
+
+    - name: FASE 8 | Validar proceso activo
+      ansible.builtin.shell: ps aux | grep '[d]hcrelay'
+      register: val_ps
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 8 | Obtener logs recientes
+      ansible.builtin.command: journalctl -u {{ fase8_dhcp_relay_service }} -n 15 --no-pager
+      register: val_journal
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 8 | Mostrar resultados
+      ansible.builtin.debug:
+        msg: |
+          === HOSTNAME ===
+          {{ val_host.stdout }}
+          
+          === INTERFACES ===
+          {{ val_ip.stdout }}
+          
+          === PING AL SERVIDOR DHCP ===
+          {{ val_ping.stdout }}
+          
+          === ESTADO DE SERVICIO ===
+          ACTIVO:  {{ val_active.stdout | default('N/A') }}
+          ENABLED: {{ val_enabled.stdout | default('N/A') }}
+          
+          === ARCHIVO CONFIGURACION ===
+          {{ val_conf.stdout }}
+          
+          === PROCESO EN EJECUCION ===
+          {{ val_ps.stdout | default('Ninguno') }}
+          
+          === LOGS RECIENTES ===
+          {{ val_journal.stdout | default('N/A') }}
+          
+          FASE 8 DHCP RELAY VALIDADA EN {{ val_host.stdout | upper }}

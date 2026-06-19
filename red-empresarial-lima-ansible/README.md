@@ -733,6 +733,9 @@ OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El br
     .\Run-Fase7-Menu.ps1
     ```
 
+### Fase 8: Servicios L3 Adicionales
+- **FASE 8 — DHCP Relay en SWCORELIM1 y SWCORELIM2 hacia LIM-DC01**: Implementación de `isc-dhcp-relay` en los switches Core para interceptar y reenviar como tráfico Unicast las peticiones DHCP generadas en las distintas VLANs (10, 20, 30, 60, 70, 80, 99) hacia el Domain Controller alojado en la VLAN 40.
+
 ### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
 
 ### Paso 1 — Preparar y pushear desde Windows/OpenCode

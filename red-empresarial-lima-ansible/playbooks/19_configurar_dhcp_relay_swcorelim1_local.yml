@@ -1,0 +1,25 @@
+---
+- name: FASE 8 | Configurar DHCP Relay en SWCORELIM1 (Local)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../host_vars/swcorelim1.yml
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta — debe ser SWCORELIM1"
+      ansible.builtin.command: hostname
+      register: fase8_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en SWCORELIM1"
+      ansible.builtin.assert:
+        that:
+          - fase8_hostname_check.stdout == "swcorelim1"
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook es exclusivo de SWCORELIM1. 
+          Estás intentando ejecutarlo en {{ fase8_hostname_check.stdout }}.
+
+  roles:
+    - core_dhcp_relay_fase8

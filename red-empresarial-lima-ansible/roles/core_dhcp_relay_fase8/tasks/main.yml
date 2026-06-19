@@ -1,0 +1,45 @@
+---
+# tasks file for core_dhcp_relay_fase8
+
+- name: FASE 8 | Validar si DHCP Relay está habilitado
+  ansible.builtin.meta: end_host
+  when: not fase8_dhcp_relay_enabled | bool
+
+- name: FASE 8 | Validar que no se configure relay en VLANs excluidas (40, 50)
+  ansible.builtin.assert:
+    that:
+      - item not in fase8_dhcp_relay_interfaces
+    fail_msg: "ERROR: La interfaz {{ item }} está en la lista de interfaces excluidas y no debe tener DHCP Relay."
+  loop: "{{ fase8_dhcp_relay_excluded_interfaces }}"
+
+- name: FASE 8 | Verificar existencia de interfaces antes de aplicar relay
+  ansible.builtin.command: ip link show {{ item }}
+  register: check_interfaces
+  changed_when: false
+  loop: "{{ fase8_dhcp_relay_interfaces }}"
+
+- name: FASE 8 | Validar conectividad al servidor DHCP (LIM-DC01)
+  ansible.builtin.command: ping -c 4 {{ fase8_dhcp_relay_server }}
+  register: ping_dhcp
+  changed_when: false
+
+- name: FASE 8 | Actualizar cache APT e instalar isc-dhcp-relay
+  ansible.builtin.apt:
+    name: "{{ fase8_dhcp_relay_package }}"
+    state: present
+    update_cache: yes
+
+- name: FASE 8 | Renderizar configuración de DHCP Relay
+  ansible.builtin.template:
+    src: isc-dhcp-relay.default.j2
+    dest: /etc/default/isc-dhcp-relay
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart isc-dhcp-relay
+
+- name: FASE 8 | Habilitar e iniciar isc-dhcp-relay
+  ansible.builtin.systemd:
+    name: "{{ fase8_dhcp_relay_service }}"
+    enabled: yes
+    state: started
