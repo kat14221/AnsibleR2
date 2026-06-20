@@ -481,26 +481,21 @@
   notify: Restart zabbix-server
   no_log: true
 
-- name: FASE 10 | Configurar timezone de PHP para Zabbix
-  ansible.builtin.template:
-    src: apache_zabbix_timezone.conf.j2
-    dest: /etc/apache2/conf-available/zabbix-timezone.conf
-    owner: root
-    group: root
-    mode: '0644'
-  notify: Restart apache2
+- name: FASE 10 | Deshabilitar configuracion Apache timezone antigua si existe
+  ansible.builtin.command: a2disconf zabbix-timezone
+  register: fase10_disable_zabbix_timezone
+  changed_when: "'Conf zabbix-timezone disabled' in fase10_disable_zabbix_timezone.stdout or 'To activate the new configuration' in fase10_disable_zabbix_timezone.stdout"
+  failed_when: false
 
-- name: FASE 10 | Habilitar configuracion timezone en Apache
-  ansible.builtin.command: a2enconf zabbix-timezone
-  changed_when: false
-  notify: Restart apache2
+- name: FASE 10 | Eliminar conf-enabled zabbix-timezone si existe
+  ansible.builtin.file:
+    path: /etc/apache2/conf-enabled/zabbix-timezone.conf
+    state: absent
 
-- name: FASE 10 | Asegurar timezone PHP en /etc/zabbix/apache.conf
-  ansible.builtin.replace:
-    path: /etc/zabbix/apache.conf
-    regexp: '#\s*php_value\s+date\.timezone\s+Europe/Riga'
-    replace: "php_value date.timezone {{ fase10_php_timezone }}"
-  notify: Restart apache2
+- name: FASE 10 | Eliminar conf-available zabbix-timezone si existe
+  ansible.builtin.file:
+    path: /etc/apache2/conf-available/zabbix-timezone.conf
+    state: absent
 
 - name: FASE 10 | Habilitar e iniciar servicios (PostgreSQL, Zabbix Server, Agent, Apache)
   ansible.builtin.systemd:
@@ -625,11 +620,55 @@
   changed_when: "'Enabling conf' in fase10_a2enconf_zabbix.stdout or 'To activate the new configuration' in fase10_a2enconf_zabbix.stdout"
   failed_when: fase10_a2enconf_zabbix.rc != 0 and 'already enabled' not in fase10_a2enconf_zabbix.stderr
 
+- name: FASE 10 | Instalar soporte PHP para Apache
+  ansible.builtin.apt:
+    name:
+      - libapache2-mod-php
+      - php-pgsql
+    state: present
+    update_cache: true
+
+- name: FASE 10 | Buscar modulo PHP disponible para Apache
+  ansible.builtin.shell: |
+    ls /etc/apache2/mods-available/php*.load 2>/dev/null | head -n 1 | xargs -r basename | sed 's/.load//'
+  args:
+    executable: /bin/bash
+  register: fase10_php_apache_module
+  changed_when: false
+
+- name: FASE 10 | Habilitar modulo PHP Apache si existe
+  ansible.builtin.command: "a2enmod {{ fase10_php_apache_module.stdout.strip() }}"
+  when: fase10_php_apache_module.stdout.strip() != ""
+  register: fase10_a2enmod_php
+  changed_when: "'Enabling module' in fase10_a2enmod_php.stdout"
+  failed_when: false
+
 - name: FASE 10 | Validar sintaxis Apache
   ansible.builtin.command: apache2ctl configtest
   register: fase10_apache_configtest
   changed_when: false
   failed_when: fase10_apache_configtest.rc != 0
+
+- name: FASE 10 | Diagnostico Apache si configtest falla
+  ansible.builtin.shell: |
+    echo "=== conf-enabled ==="
+    ls -l /etc/apache2/conf-enabled | grep -i zabbix || true
+    echo "=== conf-available ==="
+    ls -l /etc/apache2/conf-available | grep -i zabbix || true
+    echo "=== zabbix.conf ==="
+    cat /etc/apache2/conf-available/zabbix.conf || true
+    echo "=== zabbix-timezone.conf ==="
+    cat /etc/apache2/conf-available/zabbix-timezone.conf || true
+    echo "=== apache configtest ==="
+    apache2ctl configtest || true
+  register: fase10_apache_diag
+  changed_when: false
+  when: fase10_apache_configtest.rc != 0
+
+- name: FASE 10 | Mostrar diagnostico Apache si configtest falla
+  ansible.builtin.debug:
+    var: fase10_apache_diag.stdout_lines
+  when: fase10_apache_configtest.rc != 0
 
 - name: FASE 10 | Reiniciar Apache tras publicar frontend Zabbix
   ansible.builtin.systemd:

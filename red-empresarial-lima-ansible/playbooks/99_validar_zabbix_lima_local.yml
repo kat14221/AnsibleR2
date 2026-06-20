@@ -136,6 +136,23 @@
       changed_when: false
       ignore_errors: true
 
+    - name: FASE 10 | Validar que no exista zabbix-timezone.conf invalido
+      ansible.builtin.shell: |
+        if [ -f /etc/apache2/conf-enabled/zabbix-timezone.conf ]; then
+          if grep -q "php_value" /etc/apache2/conf-enabled/zabbix-timezone.conf; then
+            echo "ERROR: zabbix-timezone.conf contiene php_value y puede romper Apache"
+            exit 1
+          fi
+        fi
+        echo "OK"
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: FASE 10 | Validar Apache configtest
+      ansible.builtin.command: apache2ctl configtest
+      changed_when: false
+
     - name: FASE 10 | Validar Frontend local Zabbix HTTP
       ansible.builtin.uri:
         url: "http://127.0.0.1/zabbix"
