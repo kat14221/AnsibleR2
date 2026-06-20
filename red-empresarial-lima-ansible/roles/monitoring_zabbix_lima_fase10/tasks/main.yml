@@ -177,40 +177,143 @@
     state: present
     update_cache: true
 
-- name: FASE 10 | Crear rol (usuario) zabbix en PostgreSQL
-  ansible.builtin.command:
-    cmd: >
-      sudo -u postgres psql -c "
-      DO \$\$
+- name: FASE 10 | Habilitar e iniciar PostgreSQL antes de configurar BD
+  ansible.builtin.systemd:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: FASE 10 | Esperar disponibilidad de PostgreSQL
+  ansible.builtin.command: pg_isready
+  register: fase10_pg_isready
+  changed_when: false
+  retries: 10
+  delay: 3
+  until: fase10_pg_isready.rc == 0
+
+- name: FASE 10 | Validar acceso local como usuario postgres
+  ansible.builtin.command: psql -d postgres -tAc "SELECT version();"
+  become: true
+  become_user: postgres
+  register: fase10_pg_version
+  changed_when: false
+
+- name: FASE 10 | Mostrar version PostgreSQL
+  ansible.builtin.debug:
+    var: fase10_pg_version.stdout_lines
+
+- name: FASE 10 | Preparar password SQL escapado
+  ansible.builtin.set_fact:
+    fase10_db_password_sql: "{{ fase10_db_password | replace(\"'\", \"''\") }}"
+  no_log: true
+
+- name: FASE 10 | Crear script SQL idempotente para usuario y base Zabbix
+  ansible.builtin.copy:
+    dest: /tmp/fase10_zabbix_db.sql
+    owner: postgres
+    group: postgres
+    mode: "0600"
+    content: |
+      \set ON_ERROR_STOP on
+
+      DO $do$
       BEGIN
-         IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{{ fase10_db_user }}') THEN
-            CREATE ROLE {{ fase10_db_user }} LOGIN PASSWORD '{{ fase10_db_password }}';
+         IF NOT EXISTS (
+            SELECT FROM pg_catalog.pg_roles
+            WHERE rolname = '{{ fase10_db_user }}'
+         ) THEN
+            CREATE ROLE {{ fase10_db_user }} LOGIN PASSWORD '{{ fase10_db_password_sql }}';
          ELSE
-            ALTER ROLE {{ fase10_db_user }} WITH PASSWORD '{{ fase10_db_password }}';
+            ALTER ROLE {{ fase10_db_user }} WITH LOGIN PASSWORD '{{ fase10_db_password_sql }}';
          END IF;
       END
-      \$\$;"
-  no_log: true
-  changed_when: false
+      $do$;
 
-- name: FASE 10 | Crear base de datos zabbix en PostgreSQL
-  ansible.builtin.command:
-    cmd: >
-      sudo -u postgres psql -c "
       SELECT 'CREATE DATABASE {{ fase10_db_name }} OWNER {{ fase10_db_user }}'
-      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ fase10_db_name }}')\gexec"
-  changed_when: false
-
-- name: FASE 10 | Verificar si la base de datos zabbix ya tiene tablas
-  ansible.builtin.command: sudo -u postgres psql -d {{ fase10_db_name }} -tAc "SELECT to_regclass('public.users');"
-  register: check_db_tables
-  changed_when: false
-  ignore_errors: true
-
-- name: FASE 10 | Importar esquema inicial Zabbix
-  ansible.builtin.shell: zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql {{ fase10_db_name }}
-  when: check_db_tables.stdout == ""
+      WHERE NOT EXISTS (
+         SELECT FROM pg_database WHERE datname = '{{ fase10_db_name }}'
+      )\gexec
   no_log: true
+
+- name: FASE 10 | Crear rol y base zabbix en PostgreSQL
+  block:
+    - name: FASE 10 | Ejecutar script SQL de rol/base Zabbix
+      ansible.builtin.command: psql -d postgres -f /tmp/fase10_zabbix_db.sql
+      become: true
+      become_user: postgres
+      register: fase10_create_db_result
+      changed_when: false
+      no_log: true
+
+  rescue:
+    - name: FASE 10 | Diagnostico PostgreSQL tras fallo
+      ansible.builtin.shell: |
+        echo "=== systemctl postgresql ==="
+        systemctl status postgresql --no-pager || true
+        echo "=== pg_isready ==="
+        pg_isready || true
+        echo "=== roles ==="
+        sudo -u postgres psql -d postgres -tAc "\du" || true
+        echo "=== databases ==="
+        sudo -u postgres psql -d postgres -tAc "\l" || true
+      register: fase10_pg_diag
+      changed_when: false
+
+    - name: FASE 10 | Mostrar diagnostico PostgreSQL
+      ansible.builtin.debug:
+        var: fase10_pg_diag.stdout_lines
+
+    - name: FASE 10 | Fallar con mensaje claro
+      ansible.builtin.fail:
+        msg: "Fallo creando rol/base PostgreSQL para Zabbix. Revisar diagnostico mostrado arriba."
+
+- name: FASE 10 | Validar rol zabbix
+  ansible.builtin.command: psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ fase10_db_user }}';"
+  become: true
+  become_user: postgres
+  register: fase10_role_exists
+  changed_when: false
+  failed_when: fase10_role_exists.stdout.strip() != "1"
+
+- name: FASE 10 | Validar base zabbix
+  ansible.builtin.command: psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ fase10_db_name }}';"
+  become: true
+  become_user: postgres
+  register: fase10_db_exists
+  changed_when: false
+  failed_when: fase10_db_exists.stdout.strip() != "1"
+
+- name: FASE 10 | Verificar si esquema Zabbix ya fue importado
+  ansible.builtin.command: psql -d {{ fase10_db_name }} -tAc "SELECT to_regclass('public.users');"
+  become: true
+  become_user: postgres
+  register: fase10_zabbix_schema_check
+  changed_when: false
+
+- name: FASE 10 | Importar esquema inicial de Zabbix
+  ansible.builtin.shell: |
+    set -o pipefail
+    zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | psql -d {{ fase10_db_name }}
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: postgres
+  register: fase10_schema_import
+  changed_when: true
+  when: fase10_zabbix_schema_check.stdout.strip() == ""
+
+- name: FASE 10 | Validar tabla users de Zabbix
+  ansible.builtin.command: psql -d {{ fase10_db_name }} -tAc "SELECT to_regclass('public.users');"
+  become: true
+  become_user: postgres
+  register: fase10_zabbix_users_table
+  changed_when: false
+  failed_when: "'users' not in fase10_zabbix_users_table.stdout"
+
+- name: FASE 10 | Eliminar script SQL temporal
+  ansible.builtin.file:
+    path: /tmp/fase10_zabbix_db.sql
+    state: absent
 
 - name: FASE 10 | Configurar zabbix_server.conf
   ansible.builtin.template:

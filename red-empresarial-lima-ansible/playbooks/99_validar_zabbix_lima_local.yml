@@ -140,6 +140,24 @@
       changed_when: false
       ignore_errors: true
 
+    - name: FASE 10 | Validar pg_isready
+      ansible.builtin.command: pg_isready
+      register: val_pg_isready
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar existencia de rol zabbix
+      ansible.builtin.command: sudo -u postgres psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ fase10_db_user }}';"
+      register: val_db_role
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar existencia de base zabbix
+      ansible.builtin.command: sudo -u postgres psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ fase10_db_name }}';"
+      register: val_db_exists
+      changed_when: false
+      ignore_errors: true
+
     - name: FASE 10 | Validar tabla users en PostgreSQL
       ansible.builtin.command: sudo -u postgres psql -d zabbix -tAc "SELECT to_regclass('public.users');"
       register: val_db_users
@@ -186,6 +204,9 @@
           {{ val_ports.stdout | default('FALLO') }}
           
           === BASE DE DATOS ===
+          pg_isready: {{ val_pg_isready.stdout | default('FALLO') }}
+          Rol zabbix: {{ val_db_role.stdout | default('FALLO') }}
+          Base zabbix: {{ val_db_exists.stdout | default('FALLO') }}
           Tabla users: {{ val_db_users.stdout | default('FALLO') }}
           
           === FRONTEND ZABBIX ===
