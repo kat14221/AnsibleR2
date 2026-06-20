@@ -1,0 +1,136 @@
+---
+- name: FASE 9B | Validar DOC-FILE-BACKUP-LIMA en dominio AD
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../host_vars/doc-file-backup-lima.yml
+
+  tasks:
+    - name: FASE 9B | Validar hostname
+      ansible.builtin.command: hostname
+      register: val_host
+      changed_when: false
+
+    - name: FASE 9B | Validar interfaces
+      ansible.builtin.command: ip -br addr show {{ fase9b_interface }}
+      register: val_ip
+      changed_when: false
+
+    - name: FASE 9B | Validar resolv.conf
+      ansible.builtin.command: cat /etc/resolv.conf
+      register: val_resolv
+      changed_when: false
+
+    - name: FASE 9B | Validar getent jhalex.local
+      ansible.builtin.command: getent hosts jhalex.local
+      register: val_getent_domain
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar getent lim-dc01
+      ansible.builtin.command: getent hosts lim-dc01.jhalex.local
+      register: val_getent_dc
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar getent localhost fqdn
+      ansible.builtin.command: getent hosts doc-file-backup-lima.jhalex.local
+      register: val_getent_host
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar testparm
+      ansible.builtin.command: testparm -s
+      register: val_testparm
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar net ads testjoin
+      ansible.builtin.command: net ads testjoin
+      register: val_testjoin
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar wbinfo -t
+      ansible.builtin.command: wbinfo -t
+      register: val_wbinfo_t
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar estado smbd
+      ansible.builtin.command: systemctl is-active smbd
+      register: val_smbd
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar estado nmbd
+      ansible.builtin.command: systemctl is-active nmbd
+      register: val_nmbd
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar estado winbind
+      ansible.builtin.command: systemctl is-active winbind
+      register: val_winbind
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar ls de directorios
+      ansible.builtin.command: ls -ld {{ fase9b_share_base }} {{ fase9b_share_admin }} {{ fase9b_share_clientes }}
+      register: val_ls
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar getfacl ADMIN
+      ansible.builtin.command: getfacl {{ fase9b_share_admin }}
+      register: val_acl_admin
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar getfacl CLIENTES
+      ansible.builtin.command: getfacl {{ fase9b_share_clientes }}
+      register: val_acl_clientes
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Mostrar resultados
+      ansible.builtin.debug:
+        msg: |
+          === HOSTNAME ===
+          {{ val_host.stdout }}
+          
+          === IP ===
+          {{ val_ip.stdout }}
+          
+          === RESOLV.CONF ===
+          {{ val_resolv.stdout }}
+          
+          === DNS ===
+          Domain: {{ val_getent_domain.stdout | default('FALLO') }}
+          DC: {{ val_getent_dc.stdout | default('FALLO') }}
+          Self: {{ val_getent_host.stdout | default('FALLO') }}
+          
+          === SAMBA & AD JOIN ===
+          Testjoin: {{ val_testjoin.stdout | default(val_testjoin.stderr) | default('FALLO') }}
+          Wbinfo -t: {{ val_wbinfo_t.stdout | default('FALLO') }}
+          
+          === SERVICIOS ===
+          smbd: {{ val_smbd.stdout | default('FALLO') }}
+          nmbd: {{ val_nmbd.stdout | default('FALLO') }}
+          winbind: {{ val_winbind.stdout | default('FALLO') }}
+          
+          === TESTPARM ===
+          {{ val_testparm.stdout | default('FALLO') }}
+          
+          === PERMISOS BASE ===
+          {{ val_ls.stdout | default('FALLO') }}
+          
+          === ACL ADMIN ===
+          {{ val_acl_admin.stdout | default('FALLO') }}
+          
+          === ACL CLIENTES ===
+          {{ val_acl_clientes.stdout | default('FALLO') }}
+          
+          FASE 9B DOC-FILE-BACKUP-LIMA DOMINIO AD VALIDADA

@@ -1,0 +1,17 @@
+---
+# handlers file for file_backup_lima_domain_member_fase9b
+
+- name: Restart smbd
+  ansible.builtin.systemd:
+    name: smbd
+    state: restarted
+
+- name: Restart nmbd
+  ansible.builtin.systemd:
+    name: nmbd
+    state: restarted
+
+- name: Restart winbind
+  ansible.builtin.systemd:
+    name: winbind
+    state: restarted

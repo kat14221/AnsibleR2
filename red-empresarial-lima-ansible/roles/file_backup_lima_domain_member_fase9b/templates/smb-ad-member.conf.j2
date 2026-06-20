@@ -1,0 +1,55 @@
+[global]
+   workgroup = {{ fase9b_workgroup }}
+   realm = {{ fase9b_realm }}
+   netbios name = {{ fase9b_netbios_name }}
+   server string = {{ fase9b_workgroup }} File Backup Lima - AD Member
+
+   security = ADS
+   kerberos method = secrets and keytab
+
+   dedicated keytab file = /etc/krb5.keytab
+
+   winbind use default domain = yes
+   winbind offline logon = yes
+   winbind enum users = yes
+   winbind enum groups = yes
+
+   idmap config * : backend = tdb
+   idmap config * : range = 3000-7999
+   idmap config {{ fase9b_workgroup }} : backend = rid
+   idmap config {{ fase9b_workgroup }} : range = 10000-999999
+
+   vfs objects = acl_xattr
+   map acl inherit = yes
+   store dos attributes = yes
+   inherit acls = yes
+   inherit permissions = yes
+
+   server min protocol = SMB2
+   server max protocol = SMB3
+
+   log file = /var/log/samba/log.%m
+   max log size = 1000
+   logging = file
+
+[ADMIN]
+   path = {{ fase9b_share_admin }}
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_admin }}"
+   write list = @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_admin }}"
+   admin users = @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_admin }}"
+   create mask = 0660
+   directory mask = 2770
+
+[CLIENTES]
+   path = {{ fase9b_share_clientes }}
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_clientes }}" @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_admin }}"
+   write list = @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_clientes }}" @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_admin }}"
+   admin users = @"{{ fase9b_workgroup }}\{{ fase9b_ad_group_admin }}"
+   create mask = 0660
+   directory mask = 2770

@@ -1,0 +1,121 @@
+---
+# tasks file for file_backup_lima_domain_member_fase9b
+
+- name: FASE 9B | Validar si el rol esta habilitado
+  ansible.builtin.meta: end_host
+  when: not fase9b_domain_join_enabled | bool
+
+- name: FASE 9B | Validar conectividad al DC
+  ansible.builtin.command: ping -c 4 {{ fase9b_dns_server }}
+  register: ping_dc
+  changed_when: false
+
+- name: FASE 9B | Instalar paquetes necesarios
+  ansible.builtin.apt:
+    name:
+      - samba
+      - smbclient
+      - winbind
+      - libnss-winbind
+      - libpam-winbind
+      - krb5-user
+      - acl
+      - realmd
+      - adcli
+      - oddjob
+      - oddjob-mkhomedir
+      - packagekit
+    state: present
+    update_cache: yes
+
+- name: FASE 9B | Configurar krb5.conf
+  ansible.builtin.template:
+    src: krb5.conf.j2
+    dest: /etc/krb5.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: FASE 9B | Configurar smb.conf para AD Member
+  ansible.builtin.template:
+    src: smb-ad-member.conf.j2
+    dest: /etc/samba/smb.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: 
+    - Restart smbd
+    - Restart nmbd
+    - Restart winbind
+
+- name: FASE 9B | Configurar nsswitch.conf para incluir winbind
+  ansible.builtin.replace:
+    path: /etc/nsswitch.conf
+    regexp: '^(passwd|group):\s+files systemd(?!.*winbind)$'
+    replace: '\1:         files systemd winbind'
+
+- name: FASE 9B | Verificar estado del join
+  ansible.builtin.command: net ads testjoin
+  register: testjoin_result
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 9B | Instrucciones para join manual si no esta unido
+  ansible.builtin.debug:
+    msg: |
+      El equipo no está unido al dominio o el join falló.
+      Para unir el servidor al dominio, ejecuta interactivamente en la consola:
+      
+      sudo kinit {{ fase9b_ad_admin_user }}@{{ fase9b_realm }}
+      sudo net ads join -U {{ fase9b_ad_admin_user }}
+      sudo systemctl restart smbd nmbd winbind
+      
+      (Este playbook asume que realizarás o ya realizaste este paso manualmente)
+  when: testjoin_result.rc != 0
+
+- name: FASE 9B | Asegurar permisos base y propietarios en /srv/jhalex/ADMIN
+  ansible.builtin.file:
+    path: "{{ fase9b_share_admin }}"
+    state: directory
+    owner: "root"
+    group: "{{ fase9b_workgroup }}\\{{ fase9b_ad_group_admin }}"
+    mode: '2770'
+  ignore_errors: true
+
+- name: FASE 9B | Asegurar permisos base y propietarios en /srv/jhalex/CLIENTES
+  ansible.builtin.file:
+    path: "{{ fase9b_share_clientes }}"
+    state: directory
+    owner: "root"
+    group: "{{ fase9b_workgroup }}\\{{ fase9b_ad_group_clientes }}"
+    mode: '2770'
+  ignore_errors: true
+
+- name: FASE 9B | Agregar ACL para que admin tambien tenga control en CLIENTES (default no)
+  ansible.builtin.acl:
+    path: "{{ fase9b_share_clientes }}"
+    entity: "{{ fase9b_workgroup }}\\{{ fase9b_ad_group_admin }}"
+    etype: group
+    permissions: rwx
+    state: present
+  ignore_errors: true
+
+- name: FASE 9B | Agregar ACL para que admin tambien tenga control en CLIENTES (default yes)
+  ansible.builtin.acl:
+    path: "{{ fase9b_share_clientes }}"
+    entity: "{{ fase9b_workgroup }}\\{{ fase9b_ad_group_admin }}"
+    etype: group
+    permissions: rwx
+    default: yes
+    state: present
+  ignore_errors: true
+
+- name: FASE 9B | Habilitar e iniciar smbd, nmbd, winbind
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  loop:
+    - smbd
+    - nmbd
+    - winbind

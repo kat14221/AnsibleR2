@@ -738,6 +738,7 @@ OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El br
 
 ### Fase 9: Servidores de Archivos y Backup
 - **FASE 9 — Servidor de archivos y backup local Lima**: Despliegue de servidor de archivos autónomo en Ubuntu Server 24.04 LTS (VLAN 80) utilizando Samba/CIFS. Provee compartición granular de directorios (ADMIN y CLIENTES) soportado por permisos ACL, IP estática, y seguridad de usuarios `nologin`.
+- **FASE 9B — Integración al Dominio AD**: Transición del servidor Samba standalone a Member Server del dominio `jhalex.local` usando Kerberos (`krb5`) y Winbind. Delega la autenticación de usuarios de red a Windows Server y mapea grupos del AD (`GG-JHALEX-ADMIN-EMPRESA`, `GG-JHALEX-CLIENTES-LIMA`) hacia ACLs extendidas en Linux (`acl_xattr`).
 
 ### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
 

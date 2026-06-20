@@ -38,3 +38,27 @@ fase9_samba_cliente_password: "Cambiar.Cliente2026!*"
 fase9_samba_workgroup: "JHALEX"
 fase9_samba_netbios_name: "DOCFILELIMA"
 fase9_samba_server_string: "JHALEX File Backup Lima"
+
+# ============================================================
+# FASE 9B — Samba miembro del dominio AD
+# ============================================================
+fase9b_domain_join_enabled: true
+
+fase9b_hostname_final: "doc-file-backup-lima"
+fase9b_interface: "ens34"
+fase9b_ip: "192.168.80.2"
+fase9b_dns_server: "192.168.40.10"
+
+fase9b_domain_name: "jhalex.local"
+fase9b_realm: "JHALEX.LOCAL"
+fase9b_workgroup: "JHALEX"
+fase9b_netbios_name: "DOCFILELIMA"
+
+fase9b_ad_admin_user: "Administrador"
+
+fase9b_share_base: "/srv/jhalex"
+fase9b_share_admin: "/srv/jhalex/ADMIN"
+fase9b_share_clientes: "/srv/jhalex/CLIENTES"
+
+fase9b_ad_group_admin: "GG-JHALEX-ADMIN-EMPRESA"
+fase9b_ad_group_clientes: "GG-JHALEX-CLIENTES-LIMA"

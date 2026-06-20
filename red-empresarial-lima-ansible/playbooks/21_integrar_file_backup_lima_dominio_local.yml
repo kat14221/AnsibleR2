@@ -1,0 +1,25 @@
+---
+- name: FASE 9B | Integrar DOC-FILE-BACKUP-LIMA al dominio AD
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../host_vars/doc-file-backup-lima.yml
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta"
+      ansible.builtin.command: hostname
+      register: fase9b_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en DOC-FILE-BACKUP-LIMA"
+      ansible.builtin.assert:
+        that:
+          - fase9b_hostname_check.stdout in fase9_hostname_permitidos
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook es exclusivo de DOC-FILE-BACKUP-LIMA. 
+          Estás intentando ejecutarlo en {{ fase9b_hostname_check.stdout }}.
+
+  roles:
+    - file_backup_lima_domain_member_fase9b

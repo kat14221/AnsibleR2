@@ -1,0 +1,14 @@
+[libdefaults]
+    default_realm = {{ fase9b_realm }}
+    dns_lookup_realm = false
+    dns_lookup_kdc = true
+
+[realms]
+    {{ fase9b_realm }} = {
+        kdc = lim-dc01.{{ fase9b_domain_name }}
+        admin_server = lim-dc01.{{ fase9b_domain_name }}
+    }
+
+[domain_realm]
+    .{{ fase9b_domain_name }} = {{ fase9b_realm }}
+    {{ fase9b_domain_name }} = {{ fase9b_realm }}
