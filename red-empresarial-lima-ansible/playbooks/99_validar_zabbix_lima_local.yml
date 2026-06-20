@@ -13,6 +13,23 @@
       register: val_host
       changed_when: false
 
+    - name: FASE 10 | Validar version de SO
+      ansible.builtin.command: cat /etc/os-release
+      register: val_os_release
+      changed_when: false
+
+    - name: FASE 10 | Validar repositorios de Zabbix
+      ansible.builtin.shell: grep -R "zabbix" /etc/apt/sources.list /etc/apt/sources.list.d || true
+      register: val_repos
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar politica APT de Zabbix y PHP
+      ansible.builtin.shell: apt-cache policy zabbix-server-pgsql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent2 php-pgsql
+      register: val_apt_policy
+      changed_when: false
+      ignore_errors: true
+
     - name: FASE 10 | Validar interfaces (IP)
       ansible.builtin.command: ip -br addr show {{ fase10_interface }}
       register: val_ip
@@ -138,8 +155,15 @@
     - name: FASE 10 | Mostrar resultados de validacion
       ansible.builtin.debug:
         msg: |
-          === HOSTNAME ===
+          === HOSTNAME & OS ===
           {{ val_host.stdout | default('FALLO') }}
+          {{ val_os_release.stdout_lines | default('FALLO') }}
+          
+          === REPOSITORIOS ZABBIX ===
+          {{ val_repos.stdout_lines | default('FALLO') }}
+          
+          === APT POLICY ZABBIX & PHP ===
+          {{ val_apt_policy.stdout_lines | default('FALLO') }}
           
           === IP & RUTAS ===
           {{ val_ip.stdout | default('FALLO') }}

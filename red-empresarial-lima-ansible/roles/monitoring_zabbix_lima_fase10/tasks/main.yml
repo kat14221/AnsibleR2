@@ -56,27 +56,126 @@
   register: dns_test
   changed_when: false
 
-- name: FASE 10 | Instalar paquetes base
-  ansible.builtin.apt:
-    name: "{{ fase10_packages_base }}"
-    state: present
-    update_cache: yes
+- name: FASE 10 | Detectar version Ubuntu
+  ansible.builtin.debug:
+    msg:
+      - "Distribution: {{ ansible_distribution }}"
+      - "Version: {{ ansible_distribution_version }}"
+      - "Codename: {{ ansible_distribution_release }}"
 
-- name: FASE 10 | Descargar repositorio oficial Zabbix
+- name: FASE 10 | Validar Ubuntu
+  ansible.builtin.fail:
+    msg: "FASE 10 solo soporta Ubuntu. Detectado: {{ ansible_distribution }}"
+  when: ansible_distribution != "Ubuntu"
+
+- name: FASE 10 | Validar version Ubuntu soportada
+  ansible.builtin.fail:
+    msg: "Ubuntu {{ ansible_distribution_version }} no tiene repo Zabbix definido en fase10_zabbix_repo_deb_by_ubuntu."
+  when: ansible_distribution_version not in fase10_zabbix_repo_deb_by_ubuntu
+
+- name: FASE 10 | Definir repo Zabbix correcto segun Ubuntu
+  ansible.builtin.set_fact:
+    fase10_zabbix_repo_deb: "{{ fase10_zabbix_repo_deb_by_ubuntu[ansible_distribution_version] }}"
+
+- name: FASE 10 | Reparar dpkg si quedo incompleto
+  ansible.builtin.command: dpkg --configure -a
+  changed_when: false
+
+- name: FASE 10 | Reparar dependencias APT pendientes
+  ansible.builtin.command: apt-get install -f -y
+  changed_when: false
+
+- name: FASE 10 | Instalar herramientas para repositorios
+  ansible.builtin.apt:
+    name:
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - wget
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: true
+
+- name: FASE 10 | Habilitar repositorio universe
+  ansible.builtin.command: add-apt-repository -y universe
+  changed_when: false
+
+- name: FASE 10 | Remover paquete zabbix-release previo si existe
+  ansible.builtin.apt:
+    name: zabbix-release
+    state: absent
+    purge: true
+  ignore_errors: true
+
+- name: FASE 10 | Buscar archivos repo Zabbix previos
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: "*zabbix*"
+  register: fase10_zabbix_repo_files
+
+- name: FASE 10 | Eliminar repos Zabbix previos
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ fase10_zabbix_repo_files.files }}"
+
+- name: FASE 10 | Limpiar cache APT
+  ansible.builtin.command: apt-get clean
+  changed_when: false
+
+- name: FASE 10 | Actualizar cache APT limpia
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: FASE 10 | Descargar repo oficial Zabbix correcto
   ansible.builtin.get_url:
     url: "{{ fase10_zabbix_repo_deb }}"
     dest: /tmp/zabbix-release.deb
+    mode: "0644"
 
-- name: FASE 10 | Instalar repositorio oficial Zabbix
+- name: FASE 10 | Instalar repo oficial Zabbix correcto
   ansible.builtin.apt:
     deb: /tmp/zabbix-release.deb
-    state: present
 
-- name: FASE 10 | Actualizar cache de apt e instalar Zabbix y PostgreSQL
+- name: FASE 10 | Actualizar cache APT tras repo Zabbix
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: FASE 10 | Mostrar politica APT de paquetes Zabbix
+  ansible.builtin.shell: |
+    apt-cache policy zabbix-server-pgsql zabbix-frontend-php zabbix-apache-conf zabbix-sql-scripts zabbix-agent2 php-pgsql postgresql
+  register: fase10_apt_policy
+  changed_when: false
+
+- name: FASE 10 | Debug politica APT
+  ansible.builtin.debug:
+    var: fase10_apt_policy.stdout_lines
+
+- name: FASE 10 | Simular instalacion de paquetes Zabbix
+  ansible.builtin.command: >
+    apt-get -s install
+    postgresql
+    zabbix-server-pgsql
+    zabbix-frontend-php
+    php-pgsql
+    zabbix-apache-conf
+    zabbix-sql-scripts
+    zabbix-agent2
+  register: fase10_apt_simulation
+  changed_when: false
+  failed_when: fase10_apt_simulation.rc != 0
+
+- name: FASE 10 | Mostrar simulacion APT
+  ansible.builtin.debug:
+    var: fase10_apt_simulation.stdout_lines
+
+- name: FASE 10 | Instalar paquetes Zabbix y PostgreSQL
   ansible.builtin.apt:
     name: "{{ fase10_zabbix_packages }}"
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: FASE 10 | Crear rol (usuario) zabbix en PostgreSQL
   ansible.builtin.command:
