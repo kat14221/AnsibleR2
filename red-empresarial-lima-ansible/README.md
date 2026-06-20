@@ -741,7 +741,7 @@ OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El br
 - **FASE 9B — Integración al Dominio AD**: Transición del servidor Samba standalone a Member Server del dominio `jhalex.local` usando Kerberos (`krb5`) y Winbind. Delega la autenticación de usuarios de red a Windows Server y mapea grupos del AD (`GG-JHALEX-ADMIN-EMPRESA`, `GG-JHALEX-CLIENTES-LIMA`) hacia ACLs extendidas en Linux (`acl_xattr`).
 
 ### Fase 10: Monitoreo Empresarial
-- **FASE 10 — Servidor de Monitoreo MON-ZABBIX-LIMA**: Despliegue de Zabbix 7.0 LTS en Ubuntu Server 24.04 LTS (VLAN 70). Implementa el Server, Frontend web (Apache/PHP) y Agent 2, utilizando base de datos PostgreSQL 16 para garantizar rendimiento histórico óptimo.
+- **FASE 10 — Servidor de Monitoreo MON-ZABBIX-LIMA**: Despliegue de Zabbix 7.0 LTS en Ubuntu Server 26.04 LTS (VLAN 70). Implementa el Server, Frontend web (Apache/PHP) y Agent 2, utilizando base de datos PostgreSQL 16 para garantizar rendimiento histórico óptimo.
 
 ### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
 

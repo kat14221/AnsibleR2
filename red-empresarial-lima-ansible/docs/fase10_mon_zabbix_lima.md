@@ -1,6 +1,6 @@
 # FASE 10: Servidor de Monitoreo Empresarial (MON-ZABBIX-LIMA)
 
-Este documento detalla la configuración y arquitectura técnica empleada para desplegar el servidor de monitoreo central Zabbix en la sede de Lima.
+Este documento detalla la configuración y arquitectura técnica empleada para desplegar el servidor de monitoreo central Zabbix en la sede de Lima. El servidor corre sobre Ubuntu Server 26.04 LTS.
 
 ## 1. Objetivo de MON-ZABBIX-LIMA
 Proveer una plataforma centralizada y proactiva de monitoreo de disponibilidad, rendimiento e incidencias (fault & performance management) para los equipos de red, servidores y servicios críticos de la empresa. La adopción de Zabbix 7.0 LTS garantiza la estabilidad a largo plazo y soporte corporativo necesario.
