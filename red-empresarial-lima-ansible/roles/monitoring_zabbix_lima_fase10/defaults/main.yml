@@ -1,0 +1,3 @@
+---
+# defaults file for monitoring_zabbix_lima_fase10
+fase10_zabbix_enabled: false

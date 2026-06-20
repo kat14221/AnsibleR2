@@ -1,0 +1,174 @@
+---
+- name: FASE 10 | Validar MON-ZABBIX-LIMA local
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../host_vars/mon-zabbix-lima.yml
+
+  tasks:
+    - name: FASE 10 | Validar hostname
+      ansible.builtin.command: hostname
+      register: val_host
+      changed_when: false
+
+    - name: FASE 10 | Validar interfaces (IP)
+      ansible.builtin.command: ip -br addr show {{ fase10_interface }}
+      register: val_ip
+      changed_when: false
+
+    - name: FASE 10 | Validar rutas
+      ansible.builtin.command: ip route
+      register: val_route
+      changed_when: false
+
+    - name: FASE 10 | Validar netplan
+      ansible.builtin.command: cat /etc/netplan/01-jhalex-vlan70.yaml
+      register: val_netplan
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar ping a Gateway
+      ansible.builtin.command: ping -c 4 {{ fase10_gateway }}
+      register: val_ping_gw
+      changed_when: false
+
+    - name: FASE 10 | Validar ping a LIM-DC01
+      ansible.builtin.command: ping -c 4 {{ fase10_dns[0] }}
+      register: val_ping_dc
+      changed_when: false
+
+    - name: FASE 10 | Validar ping a Internet
+      ansible.builtin.command: ping -c 4 8.8.8.8
+      register: val_ping_net
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar resolucion jhalex.local
+      ansible.builtin.command: getent hosts jhalex.local
+      register: val_getent_domain
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar resolucion lim-dc01.jhalex.local
+      ansible.builtin.command: getent hosts lim-dc01.jhalex.local
+      register: val_getent_dc
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar estado postgresql (is-active)
+      ansible.builtin.command: systemctl is-active postgresql
+      register: val_pg_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar estado zabbix-server (is-active)
+      ansible.builtin.command: systemctl is-active zabbix-server
+      register: val_zs_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar estado zabbix-agent2 (is-active)
+      ansible.builtin.command: systemctl is-active zabbix-agent2
+      register: val_za_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar estado apache2 (is-active)
+      ansible.builtin.command: systemctl is-active apache2
+      register: val_ap_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar postgresql (is-enabled)
+      ansible.builtin.command: systemctl is-enabled postgresql
+      register: val_pg_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar zabbix-server (is-enabled)
+      ansible.builtin.command: systemctl is-enabled zabbix-server
+      register: val_zs_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar zabbix-agent2 (is-enabled)
+      ansible.builtin.command: systemctl is-enabled zabbix-agent2
+      register: val_za_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar apache2 (is-enabled)
+      ansible.builtin.command: systemctl is-enabled apache2
+      register: val_ap_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar puertos abiertos
+      ansible.builtin.shell: ss -tulpn | egrep ':80|:10050|:10051|:5432'
+      register: val_ports
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar Frontend local (curl localhost)
+      ansible.builtin.command: curl -s -I http://127.0.0.1/zabbix
+      register: val_curl_local
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar Frontend remoto (curl IP)
+      ansible.builtin.command: curl -s -I http://{{ fase10_ip }}/zabbix
+      register: val_curl_ip
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar tabla users en PostgreSQL
+      ansible.builtin.command: sudo -u postgres psql -d zabbix -tAc "SELECT to_regclass('public.users');"
+      register: val_db_users
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar targets iniciales
+      ansible.builtin.command: cat /etc/zabbix/jhalex_targets_lima.txt
+      register: val_targets
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Mostrar resultados de validacion
+      ansible.builtin.debug:
+        msg: |
+          === HOSTNAME ===
+          {{ val_host.stdout | default('FALLO') }}
+          
+          === IP & RUTAS ===
+          {{ val_ip.stdout | default('FALLO') }}
+          {{ val_route.stdout | default('FALLO') }}
+          
+          === CONECTIVIDAD & DNS ===
+          GW: {{ val_ping_gw.stdout | default('FALLO') }}
+          DC: {{ val_ping_dc.stdout | default('FALLO') }}
+          NET: {{ val_ping_net.stdout | default('FALLO') }}
+          DNS Domain: {{ val_getent_domain.stdout | default('FALLO') }}
+          DNS DC: {{ val_getent_dc.stdout | default('FALLO') }}
+          
+          === ESTADO DE SERVICIOS (Active / Enabled) ===
+          PostgreSQL: {{ val_pg_active.stdout | default('FALLO') }} / {{ val_pg_enabled.stdout | default('FALLO') }}
+          Zabbix Server: {{ val_zs_active.stdout | default('FALLO') }} / {{ val_zs_enabled.stdout | default('FALLO') }}
+          Zabbix Agent2: {{ val_za_active.stdout | default('FALLO') }} / {{ val_za_enabled.stdout | default('FALLO') }}
+          Apache2: {{ val_ap_active.stdout | default('FALLO') }} / {{ val_ap_enabled.stdout | default('FALLO') }}
+          
+          === PUERTOS ABIERTOS ===
+          {{ val_ports.stdout | default('FALLO') }}
+          
+          === BASE DE DATOS ===
+          Tabla users: {{ val_db_users.stdout | default('FALLO') }}
+          
+          === FRONTEND ZABBIX ===
+          Local: {{ val_curl_local.stdout_lines[0] | default('FALLO') }}
+          IP: {{ val_curl_ip.stdout_lines[0] | default('FALLO') }}
+          
+          === TARGETS DOCUMENTADOS ===
+          {{ val_targets.stdout | default('FALLO') }}
+          
+          FASE 10 MON-ZABBIX-LIMA VALIDADA

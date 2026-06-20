@@ -1,0 +1,25 @@
+---
+- name: FASE 10 | Configurar MON-ZABBIX-LIMA local
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../host_vars/mon-zabbix-lima.yml
+
+  pre_tasks:
+    - name: "SAFE | Confirmar VM correcta"
+      ansible.builtin.command: hostname
+      register: fase10_hostname_check
+      changed_when: false
+
+    - name: "SAFE | Abort si no estamos en MON-ZABBIX-LIMA"
+      ansible.builtin.assert:
+        that:
+          - fase10_hostname_check.stdout in fase10_hostname_permitidos
+        fail_msg: >-
+          ERROR CRÍTICO: Este playbook es exclusivo de MON-ZABBIX-LIMA. 
+          Estás intentando ejecutarlo en {{ fase10_hostname_check.stdout }}.
+
+  roles:
+    - monitoring_zabbix_lima_fase10

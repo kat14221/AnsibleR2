@@ -1,0 +1,14 @@
+network:
+  version: 2
+  ethernets:
+    {{ fase10_interface }}:
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - {{ fase10_ip }}/{{ fase10_prefix }}
+      routes:
+        - to: default
+          via: {{ fase10_gateway }}
+      nameservers:
+        addresses: {{ fase10_dns }}
+        search: {{ fase10_dns_search }}

@@ -1,0 +1,22 @@
+---
+# handlers file for monitoring_zabbix_lima_fase10
+
+- name: Restart postgresql
+  ansible.builtin.systemd:
+    name: postgresql
+    state: restarted
+
+- name: Restart zabbix-server
+  ansible.builtin.systemd:
+    name: zabbix-server
+    state: restarted
+
+- name: Restart zabbix-agent2
+  ansible.builtin.systemd:
+    name: zabbix-agent2
+    state: restarted
+
+- name: Restart apache2
+  ansible.builtin.systemd:
+    name: apache2
+    state: restarted

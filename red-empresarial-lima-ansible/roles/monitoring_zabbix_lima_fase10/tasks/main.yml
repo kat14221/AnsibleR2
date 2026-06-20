@@ -1,0 +1,178 @@
+---
+# tasks file for monitoring_zabbix_lima_fase10
+
+- name: FASE 10 | Validar si el rol esta habilitado
+  ansible.builtin.meta: end_host
+  when: not fase10_zabbix_enabled | bool
+
+- name: FASE 10 | Validar hostname permitido
+  ansible.builtin.assert:
+    that:
+      - ansible_hostname in fase10_hostname_permitidos
+    fail_msg: "ERROR: El hostname actual ({{ ansible_hostname }}) no está en la lista de permitidos."
+
+- name: FASE 10 | Cambiar hostname final
+  ansible.builtin.hostname:
+    name: "{{ fase10_hostname_final }}"
+
+- name: FASE 10 | Actualizar /etc/hosts con el nuevo hostname
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ fase10_hostname_final }}"
+    state: present
+
+- name: FASE 10 | Configurar IP fija VLAN 70 en netplan
+  ansible.builtin.template:
+    src: 01-jhalex-vlan70.yaml.j2
+    dest: /etc/netplan/01-jhalex-vlan70.yaml
+    owner: root
+    group: root
+    mode: '0600'
+  register: netplan_config
+
+- name: FASE 10 | Aplicar netplan
+  ansible.builtin.command: netplan apply
+  when: netplan_config.changed
+
+- name: FASE 10 | Validar conectividad al Gateway (Ping)
+  ansible.builtin.command: ping -c 4 {{ fase10_gateway }}
+  register: ping_gw
+  changed_when: false
+
+- name: FASE 10 | Validar conectividad al DC (Ping)
+  ansible.builtin.command: ping -c 4 {{ fase10_dns[0] }}
+  register: ping_dc
+  changed_when: false
+
+- name: FASE 10 | Validar conectividad a Internet (Ping)
+  ansible.builtin.command: ping -c 4 8.8.8.8
+  register: ping_net
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 10 | Validar resolucion DNS local
+  ansible.builtin.command: getent hosts {{ fase10_dns_search[0] }}
+  register: dns_test
+  changed_when: false
+
+- name: FASE 10 | Instalar paquetes base
+  ansible.builtin.apt:
+    name: "{{ fase10_packages_base }}"
+    state: present
+    update_cache: yes
+
+- name: FASE 10 | Descargar repositorio oficial Zabbix
+  ansible.builtin.get_url:
+    url: "{{ fase10_zabbix_repo_deb }}"
+    dest: /tmp/zabbix-release.deb
+
+- name: FASE 10 | Instalar repositorio oficial Zabbix
+  ansible.builtin.apt:
+    deb: /tmp/zabbix-release.deb
+    state: present
+
+- name: FASE 10 | Actualizar cache de apt e instalar Zabbix y PostgreSQL
+  ansible.builtin.apt:
+    name: "{{ fase10_zabbix_packages }}"
+    state: present
+    update_cache: yes
+
+- name: FASE 10 | Crear rol (usuario) zabbix en PostgreSQL
+  ansible.builtin.command:
+    cmd: >
+      sudo -u postgres psql -c "
+      DO \$\$
+      BEGIN
+         IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{{ fase10_db_user }}') THEN
+            CREATE ROLE {{ fase10_db_user }} LOGIN PASSWORD '{{ fase10_db_password }}';
+         ELSE
+            ALTER ROLE {{ fase10_db_user }} WITH PASSWORD '{{ fase10_db_password }}';
+         END IF;
+      END
+      \$\$;"
+  no_log: true
+  changed_when: false
+
+- name: FASE 10 | Crear base de datos zabbix en PostgreSQL
+  ansible.builtin.command:
+    cmd: >
+      sudo -u postgres psql -c "
+      SELECT 'CREATE DATABASE {{ fase10_db_name }} OWNER {{ fase10_db_user }}'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ fase10_db_name }}')\gexec"
+  changed_when: false
+
+- name: FASE 10 | Verificar si la base de datos zabbix ya tiene tablas
+  ansible.builtin.command: sudo -u postgres psql -d {{ fase10_db_name }} -tAc "SELECT to_regclass('public.users');"
+  register: check_db_tables
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 10 | Importar esquema inicial Zabbix
+  ansible.builtin.shell: zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql {{ fase10_db_name }}
+  when: check_db_tables.stdout == ""
+  no_log: true
+
+- name: FASE 10 | Configurar zabbix_server.conf
+  ansible.builtin.template:
+    src: zabbix_server.conf.j2
+    dest: /etc/zabbix/zabbix_server.conf
+    owner: root
+    group: root
+    mode: '0600'
+  notify: Restart zabbix-server
+  no_log: true
+
+- name: FASE 10 | Configurar timezone de PHP para Zabbix
+  ansible.builtin.template:
+    src: apache_zabbix_timezone.conf.j2
+    dest: /etc/apache2/conf-available/zabbix-timezone.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart apache2
+
+- name: FASE 10 | Habilitar configuracion timezone en Apache
+  ansible.builtin.command: a2enconf zabbix-timezone
+  changed_when: false
+  notify: Restart apache2
+
+- name: FASE 10 | Asegurar timezone PHP en /etc/zabbix/apache.conf
+  ansible.builtin.replace:
+    path: /etc/zabbix/apache.conf
+    regexp: '#\s*php_value\s+date\.timezone\s+Europe/Riga'
+    replace: "php_value date.timezone {{ fase10_php_timezone }}"
+  notify: Restart apache2
+
+- name: FASE 10 | Habilitar e iniciar servicios (PostgreSQL, Zabbix Server, Agent, Apache)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  loop:
+    - postgresql
+    - zabbix-server
+    - zabbix-agent2
+    - apache2
+
+- name: FASE 10 | Chequear estado de UFW
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 10 | Permitir puertos en UFW si esta activo
+  ansible.builtin.command: ufw allow {{ item }}
+  loop:
+    - 80/tcp
+    - 10051/tcp
+    - 10050/tcp
+  when: "'Status: active' in ufw_status.stdout"
+
+- name: FASE 10 | Crear archivo de documentacion de targets
+  ansible.builtin.template:
+    src: jhalex_targets_lima.txt.j2
+    dest: /etc/zabbix/jhalex_targets_lima.txt
+    owner: root
+    group: root
+    mode: '0644'
