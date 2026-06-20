@@ -1,0 +1,36 @@
+[global]
+   workgroup = {{ fase9_samba_workgroup }}
+   netbios name = {{ fase9_samba_netbios_name }}
+   server string = {{ fase9_samba_server_string }}
+
+   security = user
+   map to guest = never
+
+   server min protocol = SMB2
+   server max protocol = SMB3
+
+   log file = /var/log/samba/log.%m
+   max log size = 1000
+   logging = file
+
+   panic action = /usr/share/samba/panic-action %d
+
+[ADMIN]
+   path = {{ fase9_share_admin_dir }}
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = @{{ fase9_group_admin }}
+   force group = {{ fase9_group_admin }}
+   create mask = 0660
+   directory mask = 2770
+
+[CLIENTES]
+   path = {{ fase9_share_clientes_dir }}
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = @{{ fase9_group_clientes }} @{{ fase9_group_admin }}
+   force group = {{ fase9_group_clientes }}
+   create mask = 0660
+   directory mask = 2770

@@ -1,0 +1,178 @@
+---
+- name: FASE 9 | Validar DOC-FILE-BACKUP-LIMA (Local)
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../host_vars/doc-file-backup-lima.yml
+
+  tasks:
+    - name: FASE 9 | Validar hostname
+      ansible.builtin.command: hostname
+      register: val_host
+      changed_when: false
+
+    - name: FASE 9 | Validar interfaces (IP)
+      ansible.builtin.command: ip -br addr show {{ fase9_interface }}
+      register: val_ip
+      changed_when: false
+
+    - name: FASE 9 | Validar rutas
+      ansible.builtin.command: ip route
+      register: val_route
+      changed_when: false
+
+    - name: FASE 9 | Validar netplan
+      ansible.builtin.command: cat /etc/netplan/01-jhalex-vlan80.yaml
+      register: val_netplan
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar ping a Gateway
+      ansible.builtin.command: ping -c 4 {{ fase9_gateway }}
+      register: val_ping_gw
+      changed_when: false
+
+    - name: FASE 9 | Validar ping a LIM-DC01
+      ansible.builtin.command: ping -c 4 {{ fase9_dns[0] }}
+      register: val_ping_dc
+      changed_when: false
+
+    - name: FASE 9 | Validar ping a Internet
+      ansible.builtin.command: ping -c 4 8.8.8.8
+      register: val_ping_net
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar getent
+      ansible.builtin.command: getent hosts {{ fase9_dns_search[0] }}
+      register: val_getent
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar smbd (is-active)
+      ansible.builtin.command: systemctl is-active smbd
+      register: val_smbd_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar smbd (is-enabled)
+      ansible.builtin.command: systemctl is-enabled smbd
+      register: val_smbd_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar nmbd (is-active)
+      ansible.builtin.command: systemctl is-active nmbd
+      register: val_nmbd_active
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar nmbd (is-enabled)
+      ansible.builtin.command: systemctl is-enabled nmbd
+      register: val_nmbd_enabled
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar testparm
+      ansible.builtin.command: testparm -s
+      register: val_testparm
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar usuarios Samba (pdbedit)
+      ansible.builtin.command: pdbedit -L
+      register: val_pdbedit
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar permisos base (ls)
+      ansible.builtin.command: ls -ld {{ fase9_base_dir }} {{ fase9_share_admin_dir }} {{ fase9_share_clientes_dir }}
+      register: val_ls
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar getfacl ADMIN
+      ansible.builtin.command: getfacl {{ fase9_share_admin_dir }}
+      register: val_acl_admin
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar getfacl CLIENTES
+      ansible.builtin.command: getfacl {{ fase9_share_clientes_dir }}
+      register: val_acl_clientes
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9 | Validar smbclient local ADMIN
+      ansible.builtin.command: "smbclient -L localhost -U {{ fase9_user_admin }}%{{ fase9_samba_admin_password }}"
+      register: val_smbclient_admin
+      changed_when: false
+      ignore_errors: true
+      no_log: true
+
+    - name: FASE 9 | Validar smbclient local CLIENTE
+      ansible.builtin.command: "smbclient -L localhost -U {{ fase9_user_cliente }}%{{ fase9_samba_cliente_password }}"
+      register: val_smbclient_cliente
+      changed_when: false
+      ignore_errors: true
+      no_log: true
+
+    - name: FASE 9 | Mostrar resultados de validacion
+      ansible.builtin.debug:
+        msg: |
+          === HOSTNAME ===
+          {{ val_host.stdout | default('FALLO') }}
+          
+          === IP ===
+          {{ val_ip.stdout | default('FALLO') }}
+          
+          === RUTAS ===
+          {{ val_route.stdout | default('FALLO') }}
+          
+          === NETPLAN ===
+          {{ val_netplan.stdout | default('FALLO') }}
+          
+          === CONECTIVIDAD GW ===
+          {{ val_ping_gw.stdout | default('FALLO') }}
+          
+          === CONECTIVIDAD DC ===
+          {{ val_ping_dc.stdout | default('FALLO') }}
+          
+          === CONECTIVIDAD INTERNET ===
+          {{ val_ping_net.stdout | default('FALLO') }}
+          
+          === DNS RESOLUTION ===
+          {{ val_getent.stdout | default('FALLO') }}
+          
+          === ESTADO SMBD ===
+          Activo: {{ val_smbd_active.stdout | default('FALLO') }}
+          Enabled: {{ val_smbd_enabled.stdout | default('FALLO') }}
+          
+          === ESTADO NMBD ===
+          Activo: {{ val_nmbd_active.stdout | default('FALLO') }}
+          Enabled: {{ val_nmbd_enabled.stdout | default('FALLO') }}
+          
+          === TESTPARM ===
+          {{ val_testparm.stdout | default('FALLO') }}
+          
+          === PDBEDIT ===
+          {{ val_pdbedit.stdout | default('FALLO') }}
+          
+          === PERMISOS BASE ===
+          {{ val_ls.stdout | default('FALLO') }}
+          
+          === ACL ADMIN ===
+          {{ val_acl_admin.stdout | default('FALLO') }}
+          
+          === ACL CLIENTES ===
+          {{ val_acl_clientes.stdout | default('FALLO') }}
+          
+          === SMBCLIENT ADMIN ===
+          Resultados ocultos por seguridad. Exit code: {{ val_smbclient_admin.rc | default('FALLO') }}
+          
+          === SMBCLIENT CLIENTE ===
+          Resultados ocultos por seguridad. Exit code: {{ val_smbclient_cliente.rc | default('FALLO') }}
+          
+          FASE 9 DOC-FILE-BACKUP-LIMA VALIDADA

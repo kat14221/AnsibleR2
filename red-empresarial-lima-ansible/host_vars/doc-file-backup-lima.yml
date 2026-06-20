@@ -1,0 +1,40 @@
+# ============================================================
+# FASE 9 — DOC-FILE-BACKUP-LIMA
+# ============================================================
+fase9_file_backup_enabled: true
+
+fase9_hostname_final: "doc-file-backup-lima"
+fase9_hostname_permitidos:
+  - "doc-file-lima"
+  - "doc-file-backup-lima"
+
+fase9_interface: "ens34"
+fase9_ip: "192.168.80.2"
+fase9_prefix: 27
+fase9_gateway: "192.168.80.1"
+fase9_dns:
+  - "192.168.40.10"
+fase9_dns_search:
+  - "jhalex.local"
+
+fase9_packages:
+  - samba
+  - smbclient
+  - acl
+
+fase9_base_dir: "/srv/jhalex"
+fase9_share_admin_dir: "/srv/jhalex/ADMIN"
+fase9_share_clientes_dir: "/srv/jhalex/CLIENTES"
+
+fase9_group_admin: "jhalex_admin"
+fase9_group_clientes: "jhalex_clientes"
+
+fase9_user_admin: "admin.lima"
+fase9_user_cliente: "cliente.lima"
+
+fase9_samba_admin_password: "Cambiar.Admin2026!*"
+fase9_samba_cliente_password: "Cambiar.Cliente2026!*"
+
+fase9_samba_workgroup: "JHALEX"
+fase9_samba_netbios_name: "DOCFILELIMA"
+fase9_samba_server_string: "JHALEX File Backup Lima"

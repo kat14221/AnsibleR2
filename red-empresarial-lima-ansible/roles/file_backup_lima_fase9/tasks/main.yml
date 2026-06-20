@@ -1,0 +1,183 @@
+---
+# tasks file for file_backup_lima_fase9
+
+- name: FASE 9 | Validar si rol esta habilitado
+  ansible.builtin.meta: end_host
+  when: not fase9_file_backup_enabled | bool
+
+- name: FASE 9 | Validar hostname permitido
+  ansible.builtin.assert:
+    that:
+      - ansible_hostname in fase9_hostname_permitidos
+    fail_msg: "ERROR: El hostname actual ({{ ansible_hostname }}) no está en la lista de permitidos."
+
+- name: FASE 9 | Cambiar hostname final
+  ansible.builtin.hostname:
+    name: "{{ fase9_hostname_final }}"
+
+- name: FASE 9 | Actualizar /etc/hosts con el nuevo hostname
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ fase9_hostname_final }}"
+    state: present
+
+- name: FASE 9 | Configurar IP fija VLAN 80 en netplan
+  ansible.builtin.template:
+    src: 01-jhalex-vlan80.yaml.j2
+    dest: /etc/netplan/01-jhalex-vlan80.yaml
+    owner: root
+    group: root
+    mode: '0600'
+  register: netplan_config
+
+- name: FASE 9 | Aplicar netplan
+  ansible.builtin.command: netplan apply
+  when: netplan_config.changed
+
+- name: FASE 9 | Validar conectividad al Gateway (Ping)
+  ansible.builtin.command: ping -c 4 {{ fase9_gateway }}
+  register: ping_gw
+  changed_when: false
+
+- name: FASE 9 | Validar conectividad al DC (Ping)
+  ansible.builtin.command: ping -c 4 {{ fase9_dns[0] }}
+  register: ping_dc
+  changed_when: false
+
+- name: FASE 9 | Validar conectividad a Internet (Ping)
+  ansible.builtin.command: ping -c 4 8.8.8.8
+  register: ping_net
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 9 | Validar resolucion DNS local
+  ansible.builtin.command: getent hosts {{ fase9_dns_search[0] }}
+  register: dns_test
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 9 | Instalar paquetes (Samba, ACL)
+  ansible.builtin.apt:
+    name: "{{ fase9_packages }}"
+    state: present
+    update_cache: yes
+
+- name: FASE 9 | Crear grupos locales (Samba)
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - "{{ fase9_group_admin }}"
+    - "{{ fase9_group_clientes }}"
+
+- name: FASE 9 | Crear usuarios locales sin shell (Samba)
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    group: "{{ item.group }}"
+    shell: /usr/sbin/nologin
+    create_home: no
+    home: /nonexistent
+    state: present
+  loop:
+    - { name: "{{ fase9_user_admin }}", group: "{{ fase9_group_admin }}" }
+    - { name: "{{ fase9_user_cliente }}", group: "{{ fase9_group_clientes }}" }
+
+- name: FASE 9 | Crear usuarios Samba y establecer password
+  ansible.builtin.shell: |
+    (echo '{{ item.pass }}'; echo '{{ item.pass }}') | smbpasswd -a -s {{ item.name }}
+    smbpasswd -e {{ item.name }}
+  loop:
+    - { name: "{{ fase9_user_admin }}", pass: "{{ fase9_samba_admin_password }}" }
+    - { name: "{{ fase9_user_cliente }}", pass: "{{ fase9_samba_cliente_password }}" }
+  no_log: true
+  changed_when: true
+
+- name: FASE 9 | Crear carpetas base y compartidas
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ fase9_base_dir }}", owner: "root", group: "root", mode: "0755" }
+    - { path: "{{ fase9_share_admin_dir }}", owner: "root", group: "{{ fase9_group_admin }}", mode: "2770" }
+    - { path: "{{ fase9_share_clientes_dir }}", owner: "root", group: "{{ fase9_group_clientes }}", mode: "2770" }
+
+- name: FASE 9 | Aplicar ACLs para ADMIN
+  ansible.builtin.acl:
+    path: "{{ fase9_share_admin_dir }}"
+    entity: "{{ fase9_group_admin }}"
+    etype: group
+    permissions: rwx
+    default: "{{ item }}"
+    state: present
+  loop:
+    - no
+    - yes
+
+- name: FASE 9 | Aplicar ACLs para CLIENTES (Grupo Clientes)
+  ansible.builtin.acl:
+    path: "{{ fase9_share_clientes_dir }}"
+    entity: "{{ fase9_group_clientes }}"
+    etype: group
+    permissions: rwx
+    default: "{{ item }}"
+    state: present
+  loop:
+    - no
+    - yes
+
+- name: FASE 9 | Aplicar ACLs para CLIENTES (Grupo Admin)
+  ansible.builtin.acl:
+    path: "{{ fase9_share_clientes_dir }}"
+    entity: "{{ fase9_group_admin }}"
+    etype: group
+    permissions: rwx
+    default: "{{ item }}"
+    state: present
+  loop:
+    - no
+    - yes
+
+- name: FASE 9 | Respaldar configuracion original de Samba
+  ansible.builtin.copy:
+    src: /etc/samba/smb.conf
+    dest: /etc/samba/smb.conf.bak.fase9
+    remote_src: yes
+    force: no
+
+- name: FASE 9 | Configurar smb.conf
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: 
+    - Restart smbd
+    - Restart nmbd
+
+- name: FASE 9 | Validar config Samba (testparm)
+  ansible.builtin.command: testparm -s
+  changed_when: false
+
+- name: FASE 9 | Habilitar e iniciar smbd y nmbd
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    state: started
+  loop:
+    - smbd
+    - nmbd
+
+- name: FASE 9 | Chequear estado de UFW
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 9 | Permitir Samba en UFW si esta activo
+  ansible.builtin.command: ufw allow Samba
+  when: "'Status: active' in ufw_status.stdout"
