@@ -95,6 +95,32 @@
       changed_when: false
       ignore_errors: true
 
+    - name: FASE 9B | Validar getent passwd admin.lima
+      ansible.builtin.command: getent passwd admin.lima
+      register: val_passwd_admin
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar getent passwd client.lima
+      ansible.builtin.command: getent passwd client.lima
+      register: val_passwd_client
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 9B | Validar smbclient local ADMIN
+      ansible.builtin.command: "smbclient -L //localhost -U 'JHALEX\\admin.lima'%{{ fase9_samba_admin_password | default('Secret123') }}"
+      register: val_smbclient_admin
+      changed_when: false
+      ignore_errors: true
+      no_log: true
+
+    - name: FASE 9B | Validar smbclient local CLIENT
+      ansible.builtin.command: "smbclient -L //localhost -U 'JHALEX\\client.lima'%{{ fase9_samba_cliente_password | default('Secret123') }}"
+      register: val_smbclient_client
+      changed_when: false
+      ignore_errors: true
+      no_log: true
+
     - name: FASE 9B | Mostrar resultados
       ansible.builtin.debug:
         msg: |
@@ -132,5 +158,13 @@
           
           === ACL CLIENTES ===
           {{ val_acl_clientes.stdout | default('FALLO') }}
+          
+          === GETENT PASSWD ===
+          Admin: {{ val_passwd_admin.stdout | default('FALLO') }}
+          Client: {{ val_passwd_client.stdout | default('FALLO') }}
+          
+          === SMBCLIENT ===
+          Admin Exit Code: {{ val_smbclient_admin.rc | default('FALLO') }}
+          Client Exit Code: {{ val_smbclient_client.rc | default('FALLO') }}
           
           FASE 9B DOC-FILE-BACKUP-LIMA DOMINIO AD VALIDADA

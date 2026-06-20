@@ -30,7 +30,7 @@ fase9_group_admin: "jhalex_admin"
 fase9_group_clientes: "jhalex_clientes"
 
 fase9_user_admin: "admin.lima"
-fase9_user_cliente: "cliente.lima"
+fase9_user_cliente: "client.lima"
 
 fase9_samba_admin_password: "Cambiar.Admin2026!*"
 fase9_samba_cliente_password: "Cambiar.Cliente2026!*"

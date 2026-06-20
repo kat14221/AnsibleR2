@@ -3,7 +3,7 @@
 Este documento detalla el procedimiento y arquitectura técnica utilizada para integrar el servidor `DOC-FILE-BACKUP-LIMA` al Directorio Activo (`jhalex.local`).
 
 ## 1. Standalone vs AD Member
-En la Fase 9, Samba funcionaba de forma *standalone* (autónoma). La autenticación se realizaba utilizando una base de datos local `passdb` exclusiva del servidor, lo que requería administrar usuarios como `admin.lima` y `cliente.lima` localmente mediante `smbpasswd`.
+En la Fase 9, Samba funcionaba de forma *standalone* (autónoma). La autenticación se realizaba utilizando una base de datos local `passdb` exclusiva del servidor, lo que requería administrar usuarios como `admin.lima` y `client.lima` localmente mediante `smbpasswd`.
 Al cambiar a *AD Member* (Fase 9B), Samba delega la autenticación directamente a los Domain Controllers (`LIM-DC01`) usando Kerberos (`krb5`) y Winbind. Esto centraliza la gestión de accesos y aplica las políticas de grupo corporativas.
 
 ## 2. Por qué la Fase 9 usaba usuarios locales
@@ -23,7 +23,7 @@ El recurso `[CLIENTES]` permite el acceso tanto a los usuarios comunes del domin
 Además, Samba expone el atributo `acl_xattr` hacia la red. Esto permite a un administrador mapeado gestionar permisos finos NTFS (ej. prohibir eliminar pero permitir editar) desde la interfaz de Seguridad en un cliente Windows.
 
 ## 6. Restricción de Cliente No Administrador
-Para asegurar que los usuarios cliente no comprometan el entorno (ej. instalando software sin autorización), el usuario `JHALEX\cliente.lima` debe ser estrictamente un "Domain User" sin privilegios elevados. **No debe** formar parte del grupo local "Administrators" en su estación de trabajo Windows (ej. la VM `ADMIN-LIMA`).
+Para asegurar que los usuarios cliente no comprometan el entorno (ej. instalando software sin autorización), el usuario `JHALEX\client.lima` debe ser estrictamente un "Domain User" sin privilegios elevados. **No debe** formar parte del grupo local "Administrators" en su estación de trabajo Windows (ej. la VM `ADMIN-LIMA`).
 
 ## 7. UAC (User Account Control)
 Windows mantiene activo el UAC. Debido a las restricciones descritas en el punto 6, cuando el cliente intente realizar un cambio administrativo, UAC requerirá obligatoriamente las credenciales de un administrador (ej. `JHALEX\admin.lima`).
