@@ -290,10 +290,47 @@
   register: fase10_zabbix_schema_check
   changed_when: false
 
-- name: FASE 10 | Importar esquema inicial de Zabbix
+- name: FASE 10 | Verificar ruta preferida del esquema PostgreSQL Zabbix
+  ansible.builtin.stat:
+    path: /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz
+  register: fase10_schema_preferido
+
+- name: FASE 10 | Buscar esquema PostgreSQL Zabbix si no existe la ruta preferida
   ansible.builtin.shell: |
     set -o pipefail
-    zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | psql -d {{ fase10_db_name }}
+    dpkg -L zabbix-sql-scripts | grep -E '/postgresql/server\.sql(\.gz)?$' | head -n 1
+  args:
+    executable: /bin/bash
+  register: fase10_schema_detectado
+  changed_when: false
+  when: not fase10_schema_preferido.stat.exists
+
+- name: FASE 10 | Definir ruta final del esquema Zabbix PostgreSQL
+  ansible.builtin.set_fact:
+    fase10_zabbix_schema_path: >-
+      {{
+        '/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz'
+        if fase10_schema_preferido.stat.exists
+        else fase10_schema_detectado.stdout.strip()
+      }}
+
+- name: FASE 10 | Validar que se encontro esquema PostgreSQL de Zabbix
+  ansible.builtin.fail:
+    msg: "No se encontro esquema PostgreSQL de Zabbix. Revisar con: dpkg -L zabbix-sql-scripts | grep postgresql"
+  when: fase10_zabbix_schema_path == ""
+
+- name: FASE 10 | Mostrar ruta del esquema PostgreSQL detectado
+  ansible.builtin.debug:
+    msg: "Esquema PostgreSQL de Zabbix detectado en: {{ fase10_zabbix_schema_path }}"
+
+- name: FASE 10 | Importar esquema inicial de Zabbix desde ruta detectada
+  ansible.builtin.shell: |
+    set -o pipefail
+    if echo "{{ fase10_zabbix_schema_path }}" | grep -qE '\.gz$'; then
+      zcat "{{ fase10_zabbix_schema_path }}" | psql -d "{{ fase10_db_name }}"
+    else
+      psql -d "{{ fase10_db_name }}" -f "{{ fase10_zabbix_schema_path }}"
+    fi
   args:
     executable: /bin/bash
   become: true

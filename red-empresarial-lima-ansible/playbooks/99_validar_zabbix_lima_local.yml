@@ -140,6 +140,15 @@
       changed_when: false
       ignore_errors: true
 
+    - name: FASE 10 | Validar archivo SQL PostgreSQL Zabbix
+      ansible.builtin.command: dpkg -L zabbix-sql-scripts
+      register: fase10_sql_files
+      changed_when: false
+
+    - name: FASE 10 | Mostrar archivos SQL PostgreSQL Zabbix
+      ansible.builtin.debug:
+        msg: "{{ fase10_sql_files.stdout_lines | select('search', '/postgresql/') | list }}"
+
     - name: FASE 10 | Validar pg_isready
       ansible.builtin.command: pg_isready
       register: val_pg_isready
