@@ -566,6 +566,134 @@
     msg: "zabbix-server fallo al iniciar. Revisa el diagnostico arriba."
   when: fase10_zabbix_server_active.rc != 0
 
+- name: FASE 10 | Buscar ruta real del frontend Zabbix
+  ansible.builtin.shell: |
+    set -o pipefail
+    for d in \
+      /usr/share/zabbix/ui \
+      /usr/share/zabbix \
+      /usr/share/zabbix-frontend-php; do
+      if [ -f "$d/index.php" ]; then
+        echo "$d"
+        exit 0
+      fi
+    done
+
+    dpkg -L zabbix-frontend-php 2>/dev/null | grep '/index.php$' | head -n 1 | xargs -r dirname
+  args:
+    executable: /bin/bash
+  register: fase10_zabbix_frontend_dir_cmd
+  changed_when: false
+  failed_when: fase10_zabbix_frontend_dir_cmd.stdout.strip() == ""
+
+- name: FASE 10 | Definir ruta frontend Zabbix
+  ansible.builtin.set_fact:
+    fase10_zabbix_frontend_dir: "{{ fase10_zabbix_frontend_dir_cmd.stdout.strip() }}"
+
+- name: FASE 10 | Mostrar ruta frontend Zabbix
+  ansible.builtin.debug:
+    msg: "Frontend Zabbix detectado en: {{ fase10_zabbix_frontend_dir }}"
+
+- name: FASE 10 | Crear configuracion Apache explicita para Zabbix
+  ansible.builtin.copy:
+    dest: /etc/apache2/conf-available/zabbix.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Alias /zabbix {{ fase10_zabbix_frontend_dir }}
+
+      <Directory "{{ fase10_zabbix_frontend_dir }}">
+          Options FollowSymLinks
+          AllowOverride None
+          Require all granted
+          DirectoryIndex index.php
+
+          <IfModule mod_php.c>
+              php_value max_execution_time 300
+              php_value memory_limit 128M
+              php_value post_max_size 16M
+              php_value upload_max_filesize 2M
+              php_value max_input_time 300
+              php_value date.timezone {{ fase10_php_timezone }}
+          </IfModule>
+      </Directory>
+
+- name: FASE 10 | Habilitar configuracion Apache Zabbix
+  ansible.builtin.command: a2enconf zabbix
+  register: fase10_a2enconf_zabbix
+  changed_when: "'Enabling conf' in fase10_a2enconf_zabbix.stdout or 'To activate the new configuration' in fase10_a2enconf_zabbix.stdout"
+  failed_when: fase10_a2enconf_zabbix.rc != 0 and 'already enabled' not in fase10_a2enconf_zabbix.stderr
+
+- name: FASE 10 | Validar sintaxis Apache
+  ansible.builtin.command: apache2ctl configtest
+  register: fase10_apache_configtest
+  changed_when: false
+  failed_when: fase10_apache_configtest.rc != 0
+
+- name: FASE 10 | Reiniciar Apache tras publicar frontend Zabbix
+  ansible.builtin.systemd:
+    name: apache2
+    state: restarted
+    enabled: true
+
+- name: FASE 10 | Validar Frontend local Zabbix HTTP
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/zabbix"
+    method: GET
+    status_code:
+      - 200
+      - 301
+      - 302
+    return_content: false
+  register: fase10_zabbix_web_local
+  retries: 10
+  delay: 3
+  until: fase10_zabbix_web_local.status in [200, 301, 302]
+  ignore_errors: true
+
+- name: FASE 10 | Validar Frontend remoto Zabbix HTTP
+  ansible.builtin.uri:
+    url: "http://{{ fase10_ip }}/zabbix"
+    method: GET
+    status_code:
+      - 200
+      - 301
+      - 302
+    return_content: false
+  register: fase10_zabbix_web_remoto
+  ignore_errors: true
+
+- name: FASE 10 | Diagnostico Apache frontend si /zabbix falla
+  ansible.builtin.shell: |
+    echo "=== conf-available ==="
+    ls -l /etc/apache2/conf-available | grep zabbix || true
+    echo "=== conf-enabled ==="
+    ls -l /etc/apache2/conf-enabled | grep zabbix || true
+    echo "=== zabbix.conf ==="
+    cat /etc/apache2/conf-available/zabbix.conf || true
+    echo "=== frontend dir ==="
+    ls -ld {{ fase10_zabbix_frontend_dir }} || true
+    ls -l {{ fase10_zabbix_frontend_dir }} | head -n 20 || true
+    echo "=== apache configtest ==="
+    apache2ctl configtest || true
+    echo "=== curl ==="
+    curl -I http://127.0.0.1/zabbix || true
+    curl -I http://192.168.70.2/zabbix || true
+  register: fase10_apache_frontend_diag
+  changed_when: false
+  when: fase10_zabbix_web_local.failed is defined and fase10_zabbix_web_local.failed
+
+- name: FASE 10 | Mostrar diagnostico Apache frontend
+  ansible.builtin.debug:
+    var: fase10_apache_frontend_diag.stdout_lines
+  when: fase10_zabbix_web_local.failed is defined and fase10_zabbix_web_local.failed
+
+- name: FASE 10 | Fallar si Frontend local Zabbix no responde
+  ansible.builtin.fail:
+    msg: "Error: El frontend de Zabbix no responde en http://127.0.0.1/zabbix (revisa el diagnostico)"
+  when: fase10_zabbix_web_local.failed is defined and fase10_zabbix_web_local.failed
+
 - name: FASE 10 | Crear archivo de documentacion de targets
   ansible.builtin.template:
     src: jhalex_targets_lima.txt.j2

@@ -1,0 +1,11 @@
+---
+- name: FASE 10B | Instalar Modulo UX Max para Zabbix
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../host_vars/mon-zabbix-lima.yml
+
+  roles:
+    - zabbix_uxmax_fase10b

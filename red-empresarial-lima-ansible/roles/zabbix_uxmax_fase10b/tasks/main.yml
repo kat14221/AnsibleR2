@@ -1,0 +1,52 @@
+---
+- name: FASE 10B | Validar si el rol esta habilitado
+  ansible.builtin.meta: end_host
+  when: not fase10b_uxmax_enabled | bool
+
+- name: FASE 10B | Validar que el frontend Zabbix responde (Prerrequisito)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1/zabbix"
+    method: GET
+    status_code: [200, 301, 302]
+  register: fase10b_zabbix_check
+  ignore_errors: true
+
+- name: FASE 10B | Fallar si el frontend de Zabbix no esta operativo
+  ansible.builtin.fail:
+    msg: "FASE 10B requiere que Zabbix este funcionando. El frontend devolvio fallo."
+  when: fase10b_zabbix_check.failed
+
+- name: FASE 10B | Instalar Git
+  ansible.builtin.apt:
+    name: git
+    state: present
+    update_cache: yes
+
+- name: FASE 10B | Asegurar que exista el directorio de modulos
+  ansible.builtin.file:
+    path: "{{ fase10b_zabbix_modules_dir }}"
+    state: directory
+    owner: "{{ fase10b_web_user }}"
+    group: "{{ fase10b_web_group }}"
+    mode: "0755"
+
+- name: FASE 10B | Validar repositorio configurado
+  ansible.builtin.fail:
+    msg: "Debe configurar la variable 'fase10b_uxmax_repo_url' con el repositorio real de UX Max."
+  when: fase10b_uxmax_repo_url == "URL_DEL_REPO_UXMAX_A_CONFIRMAR"
+
+- name: FASE 10B | Clonar repositorio de UX Max
+  ansible.builtin.git:
+    repo: "{{ fase10b_uxmax_repo_url }}"
+    dest: "{{ fase10b_uxmax_dir }}"
+    version: main
+    update: yes
+  become: true
+
+- name: FASE 10B | Asignar ownership al directorio UX Max
+  ansible.builtin.file:
+    path: "{{ fase10b_uxmax_dir }}"
+    state: directory
+    owner: "{{ fase10b_web_user }}"
+    group: "{{ fase10b_web_group }}"
+    recurse: yes

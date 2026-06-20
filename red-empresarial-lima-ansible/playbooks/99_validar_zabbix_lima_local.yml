@@ -128,16 +128,36 @@
       changed_when: false
       ignore_errors: true
 
-    - name: FASE 10 | Validar Frontend local (curl localhost)
-      ansible.builtin.command: curl -s -I http://127.0.0.1/zabbix
-      register: val_curl_local
+    - name: FASE 10 | Validar conf Apache Zabbix habilitada
+      ansible.builtin.shell: |
+        ls -l /etc/apache2/conf-enabled | grep zabbix
+        cat /etc/apache2/conf-available/zabbix.conf
+      register: fase10_validate_apache_zabbix_conf
       changed_when: false
       ignore_errors: true
 
-    - name: FASE 10 | Validar Frontend remoto (curl IP)
-      ansible.builtin.command: curl -s -I http://{{ fase10_ip }}/zabbix
+    - name: FASE 10 | Validar Frontend local Zabbix HTTP
+      ansible.builtin.uri:
+        url: "http://127.0.0.1/zabbix"
+        method: GET
+        status_code:
+          - 200
+          - 301
+          - 302
+        return_content: false
+      register: val_curl_local
+      ignore_errors: true
+
+    - name: FASE 10 | Validar Frontend remoto Zabbix HTTP
+      ansible.builtin.uri:
+        url: "http://{{ fase10_ip }}/zabbix"
+        method: GET
+        status_code:
+          - 200
+          - 301
+          - 302
+        return_content: false
       register: val_curl_ip
-      changed_when: false
       ignore_errors: true
 
     - name: FASE 10 | Validar archivo SQL PostgreSQL Zabbix
@@ -241,8 +261,9 @@
           Acceso lectura zabbix: {{ val_zabbix_read_users.stdout_lines[0] | default('FALLO') }}
           
           === FRONTEND ZABBIX ===
-          Local: {{ val_curl_local.stdout_lines[0] | default('FALLO') }}
-          IP: {{ val_curl_ip.stdout_lines[0] | default('FALLO') }}
+          Conf Apache: {{ 'OK' if fase10_validate_apache_zabbix_conf.rc == 0 else 'FALLO' }}
+          Local HTTP status: {{ val_curl_local.status | default('FALLO') }}
+          IP HTTP status: {{ val_curl_ip.status | default('FALLO') }}
           
           === TARGETS DOCUMENTADOS ===
           {{ val_targets.stdout | default('FALLO') }}

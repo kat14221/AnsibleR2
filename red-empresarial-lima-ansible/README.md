@@ -742,6 +742,7 @@ OVS 3.3.x no permite habilitar RSTP sobre interfaces lógicas tipo `bond`. El br
 
 ### Fase 10: Monitoreo Empresarial
 - **FASE 10 — Servidor de Monitoreo MON-ZABBIX-LIMA**: Despliegue de Zabbix 7.0 LTS en Ubuntu Server 26.04 LTS (VLAN 70). Implementa el Server, Frontend web (Apache/PHP) y Agent 2, utilizando base de datos PostgreSQL 16 para garantizar rendimiento histórico óptimo.
+- **FASE 10B — UX Max Zabbix UI Enhancement (Opcional)**: Instalación del módulo UX Max para mejorar la experiencia visual y funcional del frontend de Zabbix (requiere validación previa de la Fase 10 y habilitación manual desde la interfaz de administración).
 
 ### Configuración del Laboratorio L3 y Firewall (Fase 3 y Perimetral)
 

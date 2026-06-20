@@ -1,0 +1,48 @@
+---
+- name: FASE 10B | Validar UX Max Zabbix
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../host_vars/mon-zabbix-lima.yml
+
+  tasks:
+    - name: FASE 10B | Validar directorio base de modulos
+      ansible.builtin.stat:
+        path: "{{ fase10b_zabbix_modules_dir }}"
+      register: val_modules_dir
+
+    - name: FASE 10B | Validar directorio de UX Max
+      ansible.builtin.stat:
+        path: "{{ fase10b_uxmax_dir }}"
+      register: val_uxmax_dir
+
+    - name: FASE 10B | Validar permisos de UX Max
+      ansible.builtin.shell: ls -ld {{ fase10b_uxmax_dir }} | awk '{print $3":"$4}'
+      register: val_uxmax_perms
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10B | Validar archivo manifest.json
+      ansible.builtin.stat:
+        path: "{{ fase10b_uxmax_dir }}/manifest.json"
+      register: val_uxmax_manifest
+
+    - name: FASE 10B | Mostrar resultados de validacion
+      ansible.builtin.debug:
+        msg: |
+          === DIRECTORIOS Y PERMISOS ===
+          Modulos Base Zabbix: {{ 'OK' if val_modules_dir.stat.exists else 'FALTA' }}
+          Directorio UX Max: {{ 'OK' if val_uxmax_dir.stat.exists else 'FALTA' }}
+          Permisos UX Max: {{ val_uxmax_perms.stdout | default('FALTA') }}
+          Manifest UX Max: {{ 'OK' if val_uxmax_manifest.stat.exists else 'FALTA' }}
+
+          === ACCION REQUERIDA ===
+          Para completar la configuracion de UX Max:
+          1. Ingresa al frontend de Zabbix (http://{{ fase10_ip }}/zabbix) como Super Admin
+          2. Ve a Administration -> General -> Modules
+          3. Haz clic en "Scan directory"
+          4. Haz clic en "Enable" en el modulo UX Max
+          
+          FASE 10B UX MAX VALIDADA

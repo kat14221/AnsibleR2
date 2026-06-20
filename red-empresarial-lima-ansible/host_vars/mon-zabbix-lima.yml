@@ -63,3 +63,13 @@ fase10_monitored_targets:
   - name: "GW-VLAN70"
     ip: "192.168.70.1"
     role: "Gateway VRRP VLAN 70"
+
+# ============================================================
+# FASE 10B — UX Max Zabbix UI Enhancement
+# ============================================================
+fase10b_uxmax_enabled: false
+fase10b_zabbix_modules_dir: "/usr/share/zabbix/modules"
+fase10b_uxmax_repo_url: "URL_DEL_REPO_UXMAX_A_CONFIRMAR"
+fase10b_uxmax_dir: "/usr/share/zabbix/modules/zabbix-ui-modules-ux-max"
+fase10b_web_user: "www-data"
+fase10b_web_group: "www-data"
