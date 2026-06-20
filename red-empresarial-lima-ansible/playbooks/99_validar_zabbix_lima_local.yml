@@ -173,6 +173,25 @@
       changed_when: false
       ignore_errors: true
 
+    - name: FASE 10 | Validar propietario de base de datos zabbix
+      ansible.builtin.command: sudo -u postgres psql -d postgres -tAc "SELECT datname, pg_catalog.pg_get_userbyid(datdba) FROM pg_database WHERE datname='{{ fase10_db_name }}';"
+      register: val_db_owner
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar propietario de tabla users
+      ansible.builtin.command: sudo -u postgres psql -d {{ fase10_db_name }} -tAc "SELECT tableowner FROM pg_tables WHERE schemaname='public' AND tablename='users';"
+      register: val_table_users_owner
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 10 | Validar acceso de lectura de zabbix a tabla users
+      ansible.builtin.shell: PGPASSWORD='{{ fase10_db_password }}' psql -h localhost -U "{{ fase10_db_user }}" -d "{{ fase10_db_name }}" -tAc "SELECT userid FROM users LIMIT 1;"
+      register: val_zabbix_read_users
+      changed_when: false
+      ignore_errors: true
+      no_log: true
+
     - name: FASE 10 | Validar targets iniciales
       ansible.builtin.command: cat /etc/zabbix/jhalex_targets_lima.txt
       register: val_targets
@@ -216,7 +235,10 @@
           pg_isready: {{ val_pg_isready.stdout | default('FALLO') }}
           Rol zabbix: {{ val_db_role.stdout | default('FALLO') }}
           Base zabbix: {{ val_db_exists.stdout | default('FALLO') }}
+          Owner base zabbix: {{ val_db_owner.stdout | default('FALLO') }}
           Tabla users: {{ val_db_users.stdout | default('FALLO') }}
+          Owner tabla users: {{ val_table_users_owner.stdout | default('FALLO') }}
+          Acceso lectura zabbix: {{ val_zabbix_read_users.stdout_lines[0] | default('FALLO') }}
           
           === FRONTEND ZABBIX ===
           Local: {{ val_curl_local.stdout_lines[0] | default('FALLO') }}

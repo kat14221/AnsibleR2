@@ -352,6 +352,125 @@
     path: /tmp/fase10_zabbix_db.sql
     state: absent
 
+- name: FASE 10 | Corregir propietario de la base zabbix
+  ansible.builtin.command: >
+    psql -d postgres -c "ALTER DATABASE {{ fase10_db_name }} OWNER TO {{ fase10_db_user }};"
+  become: true
+  become_user: postgres
+  changed_when: false
+
+- name: FASE 10 | Crear script SQL de saneamiento de permisos Zabbix
+  ansible.builtin.copy:
+    dest: /tmp/fase10_zabbix_fix_permissions.sql
+    owner: postgres
+    group: postgres
+    mode: "0600"
+    content: |
+      \set ON_ERROR_STOP on
+
+      ALTER SCHEMA public OWNER TO {{ fase10_db_user }};
+
+      GRANT CONNECT ON DATABASE {{ fase10_db_name }} TO {{ fase10_db_user }};
+      GRANT USAGE ON SCHEMA public TO {{ fase10_db_user }};
+      GRANT CREATE ON SCHEMA public TO {{ fase10_db_user }};
+
+      GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ fase10_db_user }};
+      GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ fase10_db_user }};
+      GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO {{ fase10_db_user }};
+
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL PRIVILEGES ON TABLES TO {{ fase10_db_user }};
+
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL PRIVILEGES ON SEQUENCES TO {{ fase10_db_user }};
+
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL PRIVILEGES ON FUNCTIONS TO {{ fase10_db_user }};
+
+- name: FASE 10 | Aplicar saneamiento de permisos PostgreSQL para Zabbix
+  ansible.builtin.command: psql -d {{ fase10_db_name }} -f /tmp/fase10_zabbix_fix_permissions.sql
+  become: true
+  become_user: postgres
+  register: fase10_fix_permissions_result
+  changed_when: false
+
+- name: FASE 10 | Reasignar objetos del esquema al usuario zabbix
+  ansible.builtin.shell: |
+    set -o pipefail
+    psql -d "{{ fase10_db_name }}" <<'SQL'
+    DO $do$
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN
+        SELECT schemaname, tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+      LOOP
+        EXECUTE format('ALTER TABLE %I.%I OWNER TO {{ fase10_db_user }}', r.schemaname, r.tablename);
+      END LOOP;
+
+      FOR r IN
+        SELECT sequence_schema, sequence_name
+        FROM information_schema.sequences
+        WHERE sequence_schema = 'public'
+      LOOP
+        EXECUTE format('ALTER SEQUENCE %I.%I OWNER TO {{ fase10_db_user }}', r.sequence_schema, r.sequence_name);
+      END LOOP;
+
+      FOR r IN
+        SELECT n.nspname AS schema_name, p.proname AS function_name, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+      LOOP
+        EXECUTE format('ALTER FUNCTION %I.%I(%s) OWNER TO {{ fase10_db_user }}', r.schema_name, r.function_name, r.args);
+      END LOOP;
+    END
+    $do$;
+    SQL
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: postgres
+  register: fase10_reassign_objects
+  changed_when: false
+
+- name: FASE 10 | Validar acceso del usuario zabbix a tabla users
+  ansible.builtin.shell: |
+    set -o pipefail
+    PGPASSWORD='{{ fase10_db_password }}' psql -h localhost -U "{{ fase10_db_user }}" -d "{{ fase10_db_name }}" -tAc "SELECT userid FROM users LIMIT 1;"
+  args:
+    executable: /bin/bash
+  register: fase10_zabbix_user_can_read_users
+  changed_when: false
+  no_log: true
+  ignore_errors: true
+
+- name: FASE 10 | Diagnosticar permisos de tabla users
+  ansible.builtin.shell: |
+    echo "=== owner database ==="
+    sudo -u postgres psql -d postgres -tAc "SELECT datname, pg_catalog.pg_get_userbyid(datdba) FROM pg_database WHERE datname='{{ fase10_db_name }}';" || true
+    echo "=== owner schema public ==="
+    sudo -u postgres psql -d "{{ fase10_db_name }}" -tAc "SELECT schema_name, schema_owner FROM information_schema.schemata WHERE schema_name='public';" || true
+    echo "=== table users privilege ==="
+    sudo -u postgres psql -d "{{ fase10_db_name }}" -c "\dp users" || true
+    echo "=== sample tables owners ==="
+    sudo -u postgres psql -d "{{ fase10_db_name }}" -tAc "SELECT schemaname, tablename, tableowner FROM pg_tables WHERE schemaname='public' ORDER BY tablename LIMIT 20;" || true
+  register: fase10_perm_diag
+  changed_when: false
+  when: fase10_zabbix_user_can_read_users.rc is defined and fase10_zabbix_user_can_read_users.rc != 0
+
+- name: FASE 10 | Mostrar diagnostico de permisos
+  ansible.builtin.debug:
+    var: fase10_perm_diag.stdout_lines
+  when: fase10_perm_diag is defined and fase10_perm_diag.stdout_lines is defined
+
+- name: FASE 10 | Fallar si usuario zabbix no puede leer tabla users
+  ansible.builtin.fail:
+    msg: "Error de permisos: El usuario zabbix no puede hacer SELECT sobre users. Revisa el diagnostico."
+  when: fase10_zabbix_user_can_read_users.rc is defined and fase10_zabbix_user_can_read_users.rc != 0
+
 - name: FASE 10 | Configurar zabbix_server.conf
   ansible.builtin.template:
     src: zabbix_server.conf.j2
@@ -407,6 +526,45 @@
     - 10051/tcp
     - 10050/tcp
   when: "'Status: active' in ufw_status.stdout"
+
+- name: FASE 10 | Reiniciar zabbix-server tras corregir permisos BD
+  ansible.builtin.systemd:
+    name: zabbix-server
+    state: restarted
+    enabled: true
+
+- name: FASE 10 | Esperar que zabbix-server quede activo
+  ansible.builtin.command: systemctl is-active zabbix-server
+  register: fase10_zabbix_server_active
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: fase10_zabbix_server_active.stdout.strip() == "active"
+  ignore_errors: true
+
+- name: FASE 10 | Diagnostico zabbix-server si no queda activo
+  ansible.builtin.shell: |
+    echo "=== systemctl status zabbix-server ==="
+    systemctl status zabbix-server --no-pager || true
+    echo "=== journalctl zabbix-server ==="
+    journalctl -u zabbix-server -n 80 --no-pager || true
+    echo "=== zabbix_server.log ==="
+    tail -n 120 /var/log/zabbix/zabbix_server.log || true
+    echo "=== DB config ==="
+    grep -E "DBName|DBUser|DBPassword|DBHost" /etc/zabbix/zabbix_server.conf || true
+  register: fase10_zabbix_diag
+  changed_when: false
+  when: fase10_zabbix_server_active.rc != 0
+
+- name: FASE 10 | Mostrar diagnostico de zabbix-server si fallo
+  ansible.builtin.debug:
+    var: fase10_zabbix_diag.stdout_lines
+  when: fase10_zabbix_server_active.rc != 0
+
+- name: FASE 10 | Fallar si zabbix-server no esta activo
+  ansible.builtin.fail:
+    msg: "zabbix-server fallo al iniciar. Revisa el diagnostico arriba."
+  when: fase10_zabbix_server_active.rc != 0
 
 - name: FASE 10 | Crear archivo de documentacion de targets
   ansible.builtin.template:
