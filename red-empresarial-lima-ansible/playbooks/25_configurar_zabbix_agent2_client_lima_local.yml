@@ -1,0 +1,18 @@
+---
+- name: FASE 10D | Instalar y configurar Zabbix Agent2 en CLIENT-LIMA
+  hosts: client-lima
+  connection: local
+  become: true
+  
+  pre_tasks:
+    - name: Verificar que el hostname sea compatible con CLIENT-LIMA
+      ansible.builtin.shell: hostname
+      register: host_name_check
+      changed_when: false
+      failed_when: >
+        host_name_check.stdout.strip() != "CLIENT-LIMA" and 
+        host_name_check.stdout.strip() != "client-lima-machine" and 
+        host_name_check.stdout.strip() != "client-lima"
+  
+  roles:
+    - zabbix_agent2_linux_fase10d

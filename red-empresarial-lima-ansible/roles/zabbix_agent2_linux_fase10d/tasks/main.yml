@@ -1,0 +1,70 @@
+---
+- name: FASE 10D | Verificar que la configuracion del agente este habilitada
+  ansible.builtin.assert:
+    that:
+      - fase10d_zabbix_agent_enabled | bool
+    msg: "La instalacion del agente Zabbix esta deshabilitada para este host."
+
+- name: FASE 10D | Comprobar disponibilidad de zabbix-agent2 en repositorios
+  ansible.builtin.shell: apt-cache search ^zabbix-agent2$
+  register: fase10d_apt_search
+  changed_when: false
+
+- name: FASE 10D | Fallar si zabbix-agent2 no existe en el repositorio
+  ansible.builtin.fail:
+    msg: "El paquete zabbix-agent2 no existe en los repositorios de este host. Debes agregar el repositorio oficial de Zabbix compatible."
+  when: fase10d_apt_search.stdout.strip() == ""
+
+- name: FASE 10D | Instalar paquetes base (curl, net-tools)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - net-tools
+    state: present
+    update_cache: true
+
+- name: FASE 10D | Instalar zabbix-agent2
+  ansible.builtin.apt:
+    name: zabbix-agent2
+    state: present
+
+- name: FASE 10D | Configurar zabbix_agent2.conf
+  ansible.builtin.template:
+    src: zabbix_agent2.conf.j2
+    dest: /etc/zabbix/zabbix_agent2.conf
+    owner: zabbix
+    group: zabbix
+    mode: '0644'
+  notify: Restart zabbix-agent2
+
+- name: FASE 10D | Habilitar e iniciar servicio zabbix-agent2
+  ansible.builtin.systemd:
+    name: zabbix-agent2
+    state: started
+    enabled: true
+
+- name: FASE 10D | Chequear estado de UFW
+  ansible.builtin.command: ufw status
+  register: fase10d_ufw_status
+  changed_when: false
+  ignore_errors: true
+
+- name: FASE 10D | Permitir trafico desde MON-ZABBIX-LIMA en UFW
+  ansible.builtin.command: ufw allow from {{ fase10d_zabbix_server_ip }} to any port {{ fase10d_zabbix_listen_port }} proto tcp
+  when: "'Status: active' in fase10d_ufw_status.stdout"
+
+- name: FASE 10D | Validar servicio zabbix-agent2
+  ansible.builtin.command: systemctl is-active zabbix-agent2
+  changed_when: false
+
+- name: FASE 10D | Validar que el puerto este escuchando
+  ansible.builtin.shell: ss -lntp | grep {{ fase10d_zabbix_listen_port }}
+  changed_when: false
+
+- name: FASE 10D | Validar parametro Server en config
+  ansible.builtin.shell: grep "^Server=" /etc/zabbix/zabbix_agent2.conf
+  changed_when: false
+
+- name: FASE 10D | Validar parametro Hostname en config
+  ansible.builtin.shell: grep "^Hostname=" /etc/zabbix/zabbix_agent2.conf
+  changed_when: false

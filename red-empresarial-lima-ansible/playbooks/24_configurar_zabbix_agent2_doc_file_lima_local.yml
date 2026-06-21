@@ -1,0 +1,17 @@
+---
+- name: FASE 10D | Instalar y configurar Zabbix Agent2 en DOC-FILE-BACKUP-LIMA
+  hosts: doc-file-backup-lima
+  connection: local
+  become: true
+  
+  pre_tasks:
+    - name: Verificar que el hostname sea compatible con DOC-FILE-BACKUP-LIMA
+      ansible.builtin.shell: hostname
+      register: host_name_check
+      changed_when: false
+      failed_when: >
+        host_name_check.stdout.strip() != "doc-file-backup-lima" and 
+        host_name_check.stdout.strip() != "doc-file-lima"
+  
+  roles:
+    - zabbix_agent2_linux_fase10d

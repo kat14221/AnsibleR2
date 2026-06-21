@@ -1,0 +1,7 @@
+---
+fase10d_zabbix_agent_enabled: false
+fase10d_zabbix_server_ip: ""
+fase10d_zabbix_agent_hostname: ""
+fase10d_zabbix_listen_ip: "0.0.0.0"
+fase10d_zabbix_listen_port: 10050
+fase10d_zabbix_target_ip: ""

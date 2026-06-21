@@ -62,3 +62,13 @@ fase9b_share_clientes: "/srv/jhalex/CLIENTES"
 
 fase9b_ad_group_admin: "GG-JHALEX-ADMIN-EMPRESA"
 fase9b_ad_group_clientes: "GG-JHALEX-CLIENTES-LIMA"
+
+# ============================================================
+# FASE 10D — Zabbix Agent2 Linux
+# ============================================================
+fase10d_zabbix_agent_enabled: true
+fase10d_zabbix_server_ip: "192.168.70.2"
+fase10d_zabbix_agent_hostname: "DOC-FILE-BACKUP-LIMA"
+fase10d_zabbix_listen_ip: "0.0.0.0"
+fase10d_zabbix_listen_port: 10050
+fase10d_zabbix_target_ip: "192.168.80.2"
