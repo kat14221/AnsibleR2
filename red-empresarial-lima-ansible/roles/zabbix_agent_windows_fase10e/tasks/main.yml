@@ -1,0 +1,76 @@
+---
+- name: FASE 10E | Mostrar variables cargadas del agente Windows
+  ansible.builtin.debug:
+    msg:
+      - "fase10e_zabbix_server_ip={{ fase10e_zabbix_server_ip | default('NO_DEFINIDO') }}"
+      - "fase10e_zabbix_agent_hostname={{ fase10e_zabbix_agent_hostname | default('NO_DEFINIDO') }}"
+      - "inventory_hostname={{ inventory_hostname }}"
+
+- name: FASE 10E | Validar conectividad al servidor Zabbix
+  ansible.windows.win_ping:
+    data: "ping"
+  ignore_errors: true
+
+- name: FASE 10E | Crear carpeta temporal de Zabbix
+  ansible.windows.win_file:
+    path: C:\Temp\Zabbix
+    state: directory
+
+- name: FASE 10E | Descargar instalador MSI de Zabbix Agent 2
+  ansible.windows.win_get_url:
+    url: "https://cdn.zabbix.com/zabbix/binaries/stable/7.0/7.0.0/zabbix_agent2-7.0.0-windows-amd64-openssl.msi"
+    dest: C:\Temp\Zabbix\zabbix_agent2.msi
+
+- name: FASE 10E | Detener servicio Zabbix Agent 2 si existe
+  ansible.windows.win_service:
+    name: "Zabbix Agent 2"
+    state: stopped
+  ignore_errors: true
+
+- name: FASE 10E | Detener servicio Zabbix Agent clasico si existe
+  ansible.windows.win_service:
+    name: "Zabbix Agent"
+    state: stopped
+  ignore_errors: true
+
+- name: FASE 10E | Instalar Zabbix Agent 2 con MSI
+  ansible.windows.win_package:
+    path: C:\Temp\Zabbix\zabbix_agent2.msi
+    state: present
+    arguments: >-
+      SERVER={{ fase10e_zabbix_server_ip }}
+      SERVERACTIVE={{ fase10e_zabbix_server_ip }}
+      HOSTNAME={{ fase10e_zabbix_agent_hostname }}
+      LISTENPORT={{ fase10e_zabbix_agent_port }}
+      ENABLEPATH=1
+
+- name: FASE 10E | Configurar archivo del agente (Template)
+  ansible.windows.win_template:
+    src: zabbix_agent2.conf.j2
+    dest: "{{ fase10e_zabbix_agent_install_dir }}\\zabbix_agent2.conf"
+  notify: Restart Zabbix Agent 2 Windows
+
+- name: FASE 10E | Abrir firewall Windows para Zabbix Agent
+  community.windows.win_firewall_rule:
+    name: "JHALEX Zabbix Agent 10050"
+    direction: in
+    protocol: tcp
+    localport: "{{ fase10e_zabbix_agent_port }}"
+    remoteip: "{{ fase10e_zabbix_server_ip }}"
+    action: allow
+    profile: any
+
+- name: FASE 10E | Iniciar y habilitar servicio Zabbix Agent 2
+  ansible.windows.win_service:
+    name: "Zabbix Agent 2"
+    state: started
+    start_mode: auto
+
+- name: FASE 10E | Validar servicio Zabbix Agent 2
+  ansible.windows.win_service:
+    name: "Zabbix Agent 2"
+  register: fase10e_service_status
+
+- name: FASE 10E | Mostrar estado del servicio Zabbix Agent 2
+  ansible.builtin.debug:
+    var: fase10e_service_status.state

@@ -1,0 +1,6 @@
+---
+fase10e_zabbix_server_ip: "192.168.70.2"
+fase10e_zabbix_agent_port: 10050
+fase10e_zabbix_agent_version: "7.0"
+fase10e_zabbix_agent_install_dir: "C:\\Program Files\\Zabbix Agent 2"
+fase10e_zabbix_service_name: "Zabbix Agent 2"

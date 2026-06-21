@@ -1,0 +1,22 @@
+---
+- name: FASE 10E | Validar Zabbix Agent Windows
+  hosts: lim_dc01,admin_lima
+  gather_facts: false
+  
+  tasks:
+    - name: Validar servicio Zabbix Agent 2
+      ansible.windows.win_service:
+        name: "Zabbix Agent 2"
+      register: zabbix_service
+      
+    - name: Mostrar estado servicio
+      ansible.builtin.debug:
+        var: zabbix_service.state
+        
+    - name: Validar puerto 10050
+      ansible.windows.win_shell: Get-NetTCPConnection -LocalPort 10050 -ErrorAction SilentlyContinue
+      register: zabbix_port
+      
+    - name: Mostrar puerto 10050
+      ansible.builtin.debug:
+        var: zabbix_port.stdout_lines

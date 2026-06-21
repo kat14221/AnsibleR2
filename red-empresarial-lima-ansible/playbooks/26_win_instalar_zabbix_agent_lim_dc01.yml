@@ -1,0 +1,10 @@
+---
+- name: FASE 10E | Instalar Zabbix Agent Windows en LIM-DC01
+  hosts: lim_dc01
+  gather_facts: false
+  
+  vars:
+    fase10e_zabbix_agent_hostname: "LIM-DC01"
+  
+  roles:
+    - zabbix_agent_windows_fase10e

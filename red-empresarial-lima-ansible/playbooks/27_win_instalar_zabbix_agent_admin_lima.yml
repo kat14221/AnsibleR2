@@ -1,0 +1,10 @@
+---
+- name: FASE 10E | Instalar Zabbix Agent Windows en ADMIN-LIMA
+  hosts: admin_lima
+  gather_facts: false
+  
+  vars:
+    fase10e_zabbix_agent_hostname: "ADMIN-LIMA"
+  
+  roles:
+    - zabbix_agent_windows_fase10e
