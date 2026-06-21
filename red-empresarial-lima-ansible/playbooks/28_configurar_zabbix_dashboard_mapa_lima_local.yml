@@ -1,7 +1,8 @@
 ---
 - name: FASE 10F | Configurar Dashboard, Mapa y Alertas en Zabbix Lima
-  hosts: mon_zabbix_lima
+  hosts: mon-zabbix-lima
   connection: local
+  become: true
   gather_facts: false
 
   roles:
