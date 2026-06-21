@@ -89,33 +89,81 @@
     state: present
     update_cache: true
 
+- name: FASE 10D | Buscar sources APT antiguos de Zabbix
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns:
+      - "*zabbix*"
+    file_type: any
+  register: fase10d_old_zabbix_sources
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Eliminar sources APT antiguos de Zabbix
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ fase10d_old_zabbix_sources.files }}"
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Purgar zabbix-release previo si existe
+  ansible.builtin.apt:
+    name: zabbix-release
+    state: absent
+    purge: true
+  failed_when: false
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Eliminar keyrings antiguos Zabbix duplicados
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/share/keyrings/zabbix-official-repo.gpg
+    - /usr/share/keyrings/zabbix.gpg
+    - /etc/apt/trusted.gpg.d/zabbix-official-repo.gpg
+    - /etc/apt/trusted.gpg.d/zabbix.gpg
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Reparar estado APT tras limpiar repos Zabbix
+  ansible.builtin.shell: |
+    set -e
+    dpkg --configure -a
+    apt-get install -f -y
+    apt-get update
+  args:
+    executable: /bin/bash
+  register: fase10d_apt_repair_after_clean
+  changed_when: false
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
 - name: FASE 10D | Descargar llave oficial Zabbix
   ansible.builtin.get_url:
     url: "{{ fase10d_zabbix_key_url }}"
     dest: /tmp/zabbix-official-repo.key
     mode: "0644"
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | Instalar keyring Zabbix
+- name: FASE 10D | Crear keyring unica Zabbix
   ansible.builtin.shell: |
     set -e
-    cat /tmp/zabbix-official-repo.key | gpg --dearmor > /usr/share/keyrings/zabbix-official-repo.gpg
-    chmod 0644 /usr/share/keyrings/zabbix-official-repo.gpg
+    gpg --dearmor < /tmp/zabbix-official-repo.key > /usr/share/keyrings/zabbix.gpg
+    chmod 0644 /usr/share/keyrings/zabbix.gpg
   args:
     executable: /bin/bash
   changed_when: false
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | Crear source APT Zabbix manual para Linux Mint/Ubuntu base
+- name: FASE 10D | Crear source APT unico Zabbix
   ansible.builtin.copy:
     dest: /etc/apt/sources.list.d/zabbix.list
     owner: root
     group: root
     mode: "0644"
     content: |
-      deb [signed-by=/usr/share/keyrings/zabbix-official-repo.gpg] {{ fase10d_zabbix_repo_base_url }} {{ fase10d_ubuntu_repo_codename }} main
-      deb-src [signed-by=/usr/share/keyrings/zabbix-official-repo.gpg] {{ fase10d_zabbix_repo_base_url }} {{ fase10d_ubuntu_repo_codename }} main
+      deb [signed-by=/usr/share/keyrings/zabbix.gpg] {{ fase10d_zabbix_repo_base_url }} {{ fase10d_ubuntu_repo_codename }} main
   when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | Actualizar cache APT y mostrar errores del repo Zabbix
+- name: FASE 10D | Actualizar cache APT con repo Zabbix limpio
   ansible.builtin.shell: |
     set -o pipefail
     apt-get update 2>&1 | tee /tmp/fase10d_apt_update_zabbix.log
@@ -126,47 +174,41 @@
   failed_when: fase10d_apt_update_zabbix.rc != 0
   when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | Mostrar source Zabbix y log apt update
+- name: FASE 10D | Mostrar diagnostico APT Zabbix
   ansible.builtin.shell: |
-    echo "=== /etc/os-release ==="
-    cat /etc/os-release
-    echo "=== zabbix.list ==="
-    cat /etc/apt/sources.list.d/zabbix.list || true
-    echo "=== apt update zabbix log ==="
+    echo "=== sources zabbix ==="
+    ls -l /etc/apt/sources.list.d/*zabbix* 2>/dev/null || true
+    cat /etc/apt/sources.list.d/zabbix.list 2>/dev/null || true
+
+    echo "=== keyrings zabbix ==="
+    ls -l /usr/share/keyrings/*zabbix* 2>/dev/null || true
+
+    echo "=== apt update log ==="
     cat /tmp/fase10d_apt_update_zabbix.log || true
-  args:
-    executable: /bin/bash
-  register: fase10d_repo_diag
-  changed_when: false
-  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | Imprimir diagnostico repo Zabbix
-  ansible.builtin.debug:
-    var: fase10d_repo_diag.stdout_lines
-  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
-
-- name: FASE 10D | Revalidar zabbix-agent2 en APT
-  ansible.builtin.shell: |
     echo "=== apt-cache policy zabbix-agent2 ==="
     apt-cache policy zabbix-agent2 || true
-    echo "=== apt-cache search zabbix-agent2 ==="
-    apt-cache search '^zabbix-agent2$' || true
+
+    echo "=== apt-cache policy zabbix-agent ==="
+    apt-cache policy zabbix-agent || true
   args:
     executable: /bin/bash
-  register: fase10d_agent2_policy_after
+  register: fase10d_zabbix_repo_diag
   changed_when: false
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | Extraer Candidate zabbix-agent2 despues
+- name: FASE 10D | Imprimir diagnostico APT Zabbix
+  ansible.builtin.debug:
+    var: fase10d_zabbix_repo_diag.stdout_lines
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Revalidar candidate zabbix-agent2
   ansible.builtin.shell: |
     apt-cache policy zabbix-agent2 | awk '/Candidate:/ {print $2}'
   args:
     executable: /bin/bash
   register: fase10d_agent2_candidate_after
   changed_when: false
-
-- name: FASE 10D | Mostrar policy zabbix-agent2
-  ansible.builtin.debug:
-    var: fase10d_agent2_policy_after.stdout_lines
 
 - name: FASE 10D | Definir paquete de agente Zabbix a instalar
   ansible.builtin.set_fact:
