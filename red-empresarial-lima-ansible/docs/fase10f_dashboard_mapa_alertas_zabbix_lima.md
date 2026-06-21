@@ -11,6 +11,21 @@ Esta fase configura automáticamente:
 - **Dashboard Ejecutivo**: Vista "JHALEX Lima - Vista Ejecutiva".
 - **Alerta Básica**: Acción "JHALEX Lima - Alerta de caida de equipo" notificada al grupo Admin en caso de Average o superior.
 
+## Credenciales seguras API Zabbix
+Antes de ejecutar la automatización, debes configurar la contraseña de la API para Zabbix en `MON-ZABBIX-LIMA`:
+
+```bash
+sudo mkdir -p /opt/jhalex/zabbix
+
+sudo tee /opt/jhalex/zabbix/fase10f_credentials.yml >/dev/null <<'EOF'
+fase10f_zabbix_user: "Admin"
+fase10f_zabbix_password: "COLOCAR_PASSWORD_REAL_DEL_PANEL"
+EOF
+
+sudo chmod 600 /opt/jhalex/zabbix/fase10f_credentials.yml
+sudo chown root:root /opt/jhalex/zabbix/fase10f_credentials.yml
+```
+
 ## Ejecución
 Ejecutar desde `MON-ZABBIX-LIMA`:
 

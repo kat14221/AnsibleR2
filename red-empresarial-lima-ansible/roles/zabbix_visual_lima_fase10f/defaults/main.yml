@@ -4,7 +4,7 @@ fase10f_enabled: true
 fase10f_zabbix_url: "http://127.0.0.1/zabbix/api_jsonrpc.php"
 fase10f_zabbix_web_url: "http://mon-zabbix-lima.jhalex.local/zabbix"
 fase10f_zabbix_user: "Admin"
-fase10f_zabbix_password: "zabbix"
+fase10f_zabbix_password: ""
 
 fase10f_site_name: "JHALEX Lima"
 fase10f_dashboard_name: "JHALEX Lima - Vista Ejecutiva"

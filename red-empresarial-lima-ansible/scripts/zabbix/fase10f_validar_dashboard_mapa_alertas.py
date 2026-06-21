@@ -15,7 +15,21 @@ def zabbix_rpc(url, auth, method, params):
     if auth:
         payload["auth"] = auth
     response = requests.post(url, json=payload, headers={'Content-Type': 'application/json-rpc'})
-    return response.json().get('result')
+    data = response.json()
+    if 'error' in data:
+        err_data = data['error']['data']
+        if "Incorrect user name or password or account is temporarily blocked" in err_data:
+            print(f"Error calling {method}: {err_data}")
+            print("ERROR: Fallo de autenticacion API Zabbix.")
+            print("Posibles causas:")
+            print("1. Password incorrecto del usuario web Zabbix.")
+            print("2. Cuenta Admin temporalmente bloqueada por demasiados intentos.")
+            print("3. Debes esperar 2 a 5 minutos o iniciar sesión manualmente en el frontend.")
+            print("4. Verifica /opt/jhalex/zabbix/fase10f_credentials.yml.")
+        else:
+            print(f"Error calling {method}: {err_data}")
+        return None
+    return data.get('result')
 
 def main():
     parser = argparse.ArgumentParser()

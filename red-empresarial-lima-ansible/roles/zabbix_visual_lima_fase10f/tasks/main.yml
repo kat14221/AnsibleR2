@@ -10,16 +10,77 @@
   ansible.builtin.file:
     path: /opt/jhalex/zabbix
     state: directory
-    owner: "{{ ansible_user | default(lookup('env', 'USER')) }}"
-    group: "{{ ansible_user | default(lookup('env', 'USER')) }}"
+    owner: root
+    group: root
     mode: '0755'
   become: true
+
+- name: FASE 10F | Verificar si existe archivo local de credenciales
+  ansible.builtin.stat:
+    path: /opt/jhalex/zabbix/fase10f_credentials.yml
+  register: fase10f_credentials_file
+
+- name: FASE 10F | Cargar credenciales locales si existen
+  ansible.builtin.include_vars:
+    file: /opt/jhalex/zabbix/fase10f_credentials.yml
+  when: fase10f_credentials_file.stat.exists
+  no_log: true
+
+- name: FASE 10F | Fallar si no se definio password de API Zabbix
+  ansible.builtin.fail:
+    msg: |
+      No se definio fase10f_zabbix_password.
+      Crea /opt/jhalex/zabbix/fase10f_credentials.yml con:
+        fase10f_zabbix_user: "Admin"
+        fase10f_zabbix_password: "PASSWORD_REAL_DEL_PANEL_ZABBIX"
+      O ejecuta con:
+        -e 'fase10f_zabbix_user=Admin' -e 'fase10f_zabbix_password=PASSWORD'
+  when: fase10f_zabbix_password | default('') | length == 0
+
+- name: FASE 10F | Limpiar archivos temporales previos
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/jhalex/zabbix/fase10f_zabbix_api_config.yml
+    - /tmp/fase10f_zabbix_api_test.json
+    - /tmp/fase10f_zabbix_api_login_response.json
+  become: true
+
+- name: FASE 10F | Validar login API Zabbix antes de configurar
+  ansible.builtin.uri:
+    url: "{{ fase10f_zabbix_url }}"
+    method: POST
+    body_format: json
+    headers:
+      Content-Type: "application/json"
+    body:
+      jsonrpc: "2.0"
+      method: "user.login"
+      params:
+        username: "{{ fase10f_zabbix_user }}"
+        password: "{{ fase10f_zabbix_password }}"
+      id: 1
+    return_content: true
+    status_code: 200
+  register: fase10f_api_login_test
+  no_log: true
+  failed_when: >
+    fase10f_api_login_test.json.error is defined or
+    fase10f_api_login_test.json.result is not defined
+
+- name: FASE 10F | Login API Zabbix validado
+  ansible.builtin.debug:
+    msg: "Login API Zabbix correcto para usuario {{ fase10f_zabbix_user }}."
 
 - name: FASE 10F | Copiar config de Zabbix API
   ansible.builtin.template:
     src: fase10f_zabbix_api_config.yml.j2
     dest: /opt/jhalex/zabbix/fase10f_zabbix_api_config.yml
     mode: '0600'
+    owner: root
+    group: root
+  no_log: true
   become: true
 
 - name: FASE 10F | Copiar script de configuracion
