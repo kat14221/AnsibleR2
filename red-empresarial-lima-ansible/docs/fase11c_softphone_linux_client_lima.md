@@ -25,14 +25,21 @@ El archivo `config` de baresip se adaptó con drivers de audio mínimos (`aufile
 Se ha creado el servicio `baresip-1002.service` corriendo bajo un usuario del sistema `baresip`. Esto asegura que el softphone inicie automáticamente con el sistema operativo y se mantenga registrado en segundo plano, ideal para mantener la extensión disponible.
 
 ## 6. Comandos de validación
-Desde CLIENT-LIMA:
+Desde CLIENT-LIMA (para validar red y servicio local):
 ```bash
 sudo env ANSIBLE_ROLES_PATH=./roles ansible-playbook \
 -i inventories/local/hosts.yml \
 playbooks/99_validar_softphone_client_lima_local.yml -vv
 ```
 
-O manualmente:
+Desde PBX-ASTERISK-LIMA (para validar el registro L7 SIP):
+```bash
+sudo env ANSIBLE_ROLES_PATH=./roles ansible-playbook \
+-i inventories/local/hosts.yml \
+playbooks/99_validar_pbx_asterisk_fase11c_1002_local.yml -vv
+```
+
+O manualmente en CLIENT-LIMA:
 ```bash
 hostname
 ip -br addr
@@ -44,9 +51,8 @@ journalctl -u baresip-1002 -n 40 --no-pager
 ```
 
 ## 7. Evidencia esperada en Asterisk
-La verdadera confirmación del registro ocurre en la PBX. Desde PBX-ASTERISK-LIMA ejecutar:
+La confirmación técnica la hace el playbook `99_validar_pbx_asterisk_fase11c_1002_local.yml`. O si deseas auditar manualmente, desde PBX-ASTERISK-LIMA ejecutar:
 ```bash
-sudo asterisk -rx "pjsip show endpoints"
 sudo asterisk -rx "pjsip show contacts"
 ```
 

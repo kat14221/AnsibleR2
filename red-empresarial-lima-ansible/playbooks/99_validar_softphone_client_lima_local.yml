@@ -1,126 +1,56 @@
 ---
-# Bloque 1: validar CLIENT-LIMA
-- name: FASE 11C | Validar Softphone Linux CLIENT-LIMA
+- name: FASE 11C | Validar CLIENT-LIMA softphone Linux
   hosts: client-lima
   become: true
   gather_facts: false
 
   tasks:
-    - name: FASE 11C | Validar hostname
+    - name: FASE 11C | Hostname
       ansible.builtin.command: hostname
-      register: val_hostname
+      register: fase11c_hostname
       changed_when: false
 
-    - name: FASE 11C | Validar IPs
+    - name: FASE 11C | IPs
       ansible.builtin.command: ip -br addr
-      register: val_ips
+      register: fase11c_ip_addr
       changed_when: false
 
-    - name: FASE 11C | Validar rutas
+    - name: FASE 11C | Rutas
       ansible.builtin.command: ip route
-      register: val_route
+      register: fase11c_routes
       changed_when: false
 
-    - name: FASE 11C | Validar conectividad a PBX
+    - name: FASE 11C | Ping a PBX
       ansible.builtin.command: ping -c 3 192.168.60.10
+      register: fase11c_ping_pbx
       changed_when: false
 
-    - name: FASE 11C | Validar que baresip-1002 este activo
+    - name: FASE 11C | Estado baresip-1002
       ansible.builtin.command: systemctl is-active baresip-1002
-      register: val_active
+      register: fase11c_baresip_active
       changed_when: false
 
-    - name: FASE 11C | Validar que baresip-1002 este habilitado
+    - name: FASE 11C | Servicio baresip habilitado
       ansible.builtin.command: systemctl is-enabled baresip-1002
-      register: val_enabled
+      register: fase11c_baresip_enabled
       changed_when: false
 
-    - name: FASE 11C | Mostrar config accounts
+    - name: FASE 11C | Ver accounts
       ansible.builtin.command: cat /var/lib/baresip/.baresip/accounts
-      register: val_accounts
+      register: fase11c_accounts
       changed_when: false
 
-    - name: FASE 11C | Mostrar logs de baresip-1002
+    - name: FASE 11C | Logs baresip
       ansible.builtin.command: journalctl -u baresip-1002 -n 80 --no-pager
-      register: val_logs
+      register: fase11c_baresip_logs
       changed_when: false
 
-    - name: FASE 11C | Resumen CLIENT-LIMA
+    - name: FASE 11C | Mostrar resumen CLIENT-LIMA
       ansible.builtin.debug:
-        msg: |
-          FASE 11C CLIENT-LIMA — VALIDACIÓN LOCAL
-          Hostname: {{ val_hostname.stdout }}
-          Baresip Service Active: {{ val_active.stdout }}
-          Baresip Service Enabled: {{ val_enabled.stdout }}
-          
-          Accounts config:
-          {{ val_accounts.stdout }}
-
-          Logs recientes:
-          {{ val_logs.stdout }}
-
-# Bloque 2: validar PBX-ASTERISK-LIMA
-- name: FASE 11C | Validar PBX-ASTERISK-LIMA
-  hosts: pbx-asterisk-lima
-  become: true
-  gather_facts: false
-
-  tasks:
-    - name: FASE 11C | Verificar que Asterisk existe en PBX
-      ansible.builtin.command: which asterisk
-      become: true
-      register: fase11c_which_asterisk
-      changed_when: false
-      ignore_errors: true
-
-    - name: FASE 11C | Fallar si Asterisk no existe en PBX
-      ansible.builtin.fail:
-        msg: "Asterisk no está instalado o no está en PATH en PBX-ASTERISK-LIMA. Verificar inventario o host destino."
-      when: fase11c_which_asterisk.rc != 0
-
-    - name: FASE 11C | Validar endpoint 1002 en PBX
-      ansible.builtin.command:
-        argv:
-          - asterisk
-          - -rx
-          - pjsip show endpoint 1002
-      become: true
-      register: fase11c_pbx_endpoint_1002
-      changed_when: false
-
-    - name: FASE 11C | Validar AOR 1002 en PBX
-      ansible.builtin.command:
-        argv:
-          - asterisk
-          - -rx
-          - pjsip show aor 1002
-      become: true
-      register: fase11c_pbx_aor_1002
-      changed_when: false
-
-    - name: FASE 11C | Validar AUTH 1002 en PBX
-      ansible.builtin.command:
-        argv:
-          - asterisk
-          - -rx
-          - pjsip show auth auth1002
-      become: true
-      register: fase11c_pbx_auth_1002
-      changed_when: false
-
-    - name: FASE 11C | Validar contactos PJSIP en PBX
-      ansible.builtin.command:
-        argv:
-          - asterisk
-          - -rx
-          - pjsip show contacts
-      become: true
-      register: fase11c_pbx_contacts
-      changed_when: false
-
-    - name: FASE 11C | Verificar que 1002 este registrado desde CLIENT-LIMA
-      ansible.builtin.assert:
-        that:
-          - "'1002/sip:1002@192.168.20.20' in fase11c_pbx_contacts.stdout"
-        fail_msg: "La extension 1002 de CLIENT-LIMA no aparece registrada en Asterisk."
-        success_msg: "La extension 1002 aparece registrada correctamente desde CLIENT-LIMA."
+        msg:
+          - "{{ fase11c_hostname.stdout }}"
+          - "{{ fase11c_ip_addr.stdout_lines }}"
+          - "{{ fase11c_routes.stdout_lines }}"
+          - "baresip active: {{ fase11c_baresip_active.stdout }}"
+          - "baresip enabled: {{ fase11c_baresip_enabled.stdout }}"
+          - "{{ fase11c_accounts.stdout }}"

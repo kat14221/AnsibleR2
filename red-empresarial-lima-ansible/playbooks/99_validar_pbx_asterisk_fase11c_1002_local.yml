@@ -1,0 +1,70 @@
+---
+- name: FASE 11C | Validar PBX-ASTERISK-LIMA para extensión 1002
+  hosts: pbx-asterisk-lima
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: FASE 11C | Identidad PBX
+      ansible.builtin.shell: |
+        hostname
+        ip -br addr
+      register: fase11c_pbx_identity
+      changed_when: false
+
+    - name: FASE 11C | Buscar binario Asterisk
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /usr/sbin/asterisk
+        - /usr/bin/asterisk
+      register: fase11c_asterisk_bins
+
+    - name: FASE 11C | Definir binario Asterisk
+      ansible.builtin.set_fact:
+        fase11c_asterisk_bin: "{{ item.stat.path }}"
+      loop: "{{ fase11c_asterisk_bins.results }}"
+      when: item.stat.exists
+
+    - name: FASE 11C | Fallar si no existe Asterisk
+      ansible.builtin.fail:
+        msg: "No se encontró Asterisk en PBX-ASTERISK-LIMA. Revisar inventario o instalación."
+      when: fase11c_asterisk_bin is not defined
+
+    - name: FASE 11C | Validar endpoint 1002
+      ansible.builtin.command:
+        argv:
+          - "{{ fase11c_asterisk_bin }}"
+          - -rx
+          - pjsip show endpoint 1002
+      register: fase11c_endpoint_1002
+      changed_when: false
+
+    - name: FASE 11C | Validar AOR 1002
+      ansible.builtin.command:
+        argv:
+          - "{{ fase11c_asterisk_bin }}"
+          - -rx
+          - pjsip show aor 1002
+      register: fase11c_aor_1002
+      changed_when: false
+
+    - name: FASE 11C | Validar contactos PJSIP
+      ansible.builtin.command:
+        argv:
+          - "{{ fase11c_asterisk_bin }}"
+          - -rx
+          - pjsip show contacts
+      register: fase11c_contacts
+      changed_when: false
+
+    - name: FASE 11C | Mostrar contactos
+      ansible.builtin.debug:
+        var: fase11c_contacts.stdout_lines
+
+    - name: FASE 11C | Validar que 1002 aparece registrado
+      ansible.builtin.assert:
+        that:
+          - "'1002/sip:1002@192.168.20.20' in fase11c_contacts.stdout"
+        fail_msg: "1002 todavía no aparece registrado desde CLIENT-LIMA."
+        success_msg: "1002 aparece registrado correctamente desde CLIENT-LIMA."
