@@ -153,6 +153,30 @@
       ansible.builtin.command: apache2ctl configtest
       changed_when: false
 
+    - name: FASE 10 | Validar archivo frontend zabbix.conf.php real
+      ansible.builtin.stat:
+        path: /etc/zabbix/web/zabbix.conf.php
+      register: fase10_validate_conf_php
+
+    - name: FASE 10 | Fallar si no existe zabbix.conf.php
+      ansible.builtin.fail:
+        msg: "No existe /etc/zabbix/web/zabbix.conf.php"
+      when: not fase10_validate_conf_php.stat.exists
+
+    - name: FASE 10 | Validar symlink frontend zabbix.conf.php
+      ansible.builtin.shell: |
+        readlink -f /usr/share/zabbix/conf/zabbix.conf.php || true
+        ls -l /usr/share/zabbix/conf/zabbix.conf.php || true
+        ls -l /etc/zabbix/web/zabbix.conf.php || true
+      args:
+        executable: /bin/bash
+      register: fase10_validate_conf_php_paths
+      changed_when: false
+
+    - name: FASE 10 | Mostrar rutas zabbix.conf.php
+      ansible.builtin.debug:
+        var: fase10_validate_conf_php_paths.stdout_lines
+
     - name: FASE 10 | Validar Frontend local Zabbix HTTP
       ansible.builtin.uri:
         url: "http://127.0.0.1/zabbix"

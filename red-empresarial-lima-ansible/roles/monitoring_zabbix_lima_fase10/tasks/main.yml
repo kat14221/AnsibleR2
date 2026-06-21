@@ -676,7 +676,76 @@
     state: restarted
     enabled: true
 
-- name: FASE 10 | Validar Frontend local Zabbix HTTP
+- name: FASE 10 | Crear directorio real de configuracion web Zabbix
+  ansible.builtin.file:
+    path: /etc/zabbix/web
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0750"
+
+- name: FASE 10 | Crear directorio frontend conf Zabbix si existe en /usr/share
+  ansible.builtin.file:
+    path: /usr/share/zabbix/conf
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0775"
+
+- name: FASE 10 | Desplegar zabbix.conf.php en ruta real Debian/Ubuntu
+  ansible.builtin.template:
+    src: zabbix.conf.php.j2
+    dest: /etc/zabbix/web/zabbix.conf.php
+    owner: www-data
+    group: www-data
+    mode: "0640"
+  no_log: true
+
+- name: FASE 10 | Verificar symlink o archivo zabbix.conf.php del frontend
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "=== readlink ==="
+    readlink -f /usr/share/zabbix/conf/zabbix.conf.php || true
+    echo "=== ls frontend conf ==="
+    ls -l /usr/share/zabbix/conf/zabbix.conf.php || true
+    echo "=== ls real conf ==="
+    ls -l /etc/zabbix/web/zabbix.conf.php || true
+  args:
+    executable: /bin/bash
+  register: fase10_zabbix_conf_php_check
+  changed_when: false
+
+- name: FASE 10 | Mostrar verificacion zabbix.conf.php
+  ansible.builtin.debug:
+    var: fase10_zabbix_conf_php_check.stdout_lines
+
+- name: FASE 10 | Validar existencia de zabbix.conf.php real
+  ansible.builtin.stat:
+    path: /etc/zabbix/web/zabbix.conf.php
+  register: fase10_zabbix_conf_php_real
+
+- name: FASE 10 | Fallar si no existe zabbix.conf.php real
+  ansible.builtin.fail:
+    msg: "No se pudo crear /etc/zabbix/web/zabbix.conf.php"
+  when: not fase10_zabbix_conf_php_real.stat.exists
+
+- name: FASE 10 | Validar lectura de zabbix.conf.php como www-data
+  ansible.builtin.command: sudo -u www-data test -r /etc/zabbix/web/zabbix.conf.php
+  changed_when: false
+
+- name: FASE 10 | Reiniciar Apache tras crear zabbix.conf.php
+  ansible.builtin.systemd:
+    name: apache2
+    state: restarted
+    enabled: true
+
+- name: FASE 10 | Reiniciar zabbix-server tras crear config frontend
+  ansible.builtin.systemd:
+    name: zabbix-server
+    state: restarted
+    enabled: true
+
+- name: FASE 10 | Validar frontend Zabbix despues de crear zabbix.conf.php
   ansible.builtin.uri:
     url: "http://127.0.0.1/zabbix"
     method: GET
@@ -684,12 +753,17 @@
       - 200
       - 301
       - 302
-    return_content: false
+    return_content: true
   register: fase10_zabbix_web_local
   retries: 10
   delay: 3
   until: fase10_zabbix_web_local.status in [200, 301, 302]
   ignore_errors: true
+
+- name: FASE 10 | Detectar si todavia aparece setup.php
+  ansible.builtin.debug:
+    msg: "Advertencia: revisar manualmente si aun redirige a setup.php."
+  when: fase10_zabbix_web_local.url is defined and 'setup.php' in fase10_zabbix_web_local.url
 
 - name: FASE 10 | Validar Frontend remoto Zabbix HTTP
   ansible.builtin.uri:
