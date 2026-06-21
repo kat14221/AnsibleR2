@@ -1,4 +1,5 @@
 ---
+# Bloque 1: validar CLIENT-LIMA
 - name: FASE 11C | Validar Softphone Linux CLIENT-LIMA
   hosts: client-lima
   become: true
@@ -34,21 +35,49 @@
       register: val_enabled
       changed_when: false
 
+    - name: FASE 11C | Mostrar config accounts
+      ansible.builtin.command: cat /var/lib/baresip/.baresip/accounts
+      register: val_accounts
+      changed_when: false
+
     - name: FASE 11C | Mostrar logs de baresip-1002
-      ansible.builtin.command: journalctl -u baresip-1002 -n 40 --no-pager
+      ansible.builtin.command: journalctl -u baresip-1002 -n 80 --no-pager
       register: val_logs
       changed_when: false
 
-    - name: FASE 11C | Resumen
+    - name: FASE 11C | Resumen CLIENT-LIMA
       ansible.builtin.debug:
         msg: |
-          FASE 11C SOFTPHONE LINUX CLIENT-LIMA — VALIDACIÓN FINAL
+          FASE 11C CLIENT-LIMA — VALIDACIÓN LOCAL
           Hostname: {{ val_hostname.stdout }}
           Baresip Service Active: {{ val_active.stdout }}
           Baresip Service Enabled: {{ val_enabled.stdout }}
           
+          Accounts config:
+          {{ val_accounts.stdout }}
+
           Logs recientes:
           {{ val_logs.stdout }}
-          
-          RECUERDA VALIDAR EL REGISTRO DESDE PBX-ASTERISK-LIMA:
-          sudo asterisk -rx "pjsip show contacts"
+
+# Bloque 2: validar PBX-ASTERISK-LIMA
+- name: FASE 11C | Validar PBX-ASTERISK-LIMA
+  hosts: pbx-asterisk-lima
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: FASE 11C | Validar endpoint 1002
+      ansible.builtin.command: asterisk -rx "pjsip show endpoint 1002"
+      changed_when: false
+
+    - name: FASE 11C | Validar aor 1002
+      ansible.builtin.command: asterisk -rx "pjsip show aor 1002"
+      changed_when: false
+
+    - name: FASE 11C | Validar auth 1002
+      ansible.builtin.command: asterisk -rx "pjsip show auth auth1002"
+      changed_when: false
+
+    - name: FASE 11C | Validar contacts (debe contener 1002)
+      ansible.builtin.shell: asterisk -rx "pjsip show contacts" | grep "1002/sip:1002@192.168.20.20"
+      changed_when: false
