@@ -76,6 +76,7 @@ Para MicroSIP, Zoiper o similar:
 sudo systemctl status asterisk --no-pager
 sudo asterisk -rx "core show version"
 sudo asterisk -rx "pjsip show endpoints"
+sudo asterisk -rx "pjsip show aors"
 sudo asterisk -rx "pjsip show contacts"
 sudo asterisk -rx "dialplan show internal"
 ss -lunpt | grep 5060

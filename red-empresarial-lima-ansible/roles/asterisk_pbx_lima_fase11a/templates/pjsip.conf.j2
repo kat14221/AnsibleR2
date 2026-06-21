@@ -21,7 +21,7 @@ context=internal
 disallow=all
 allow=ulaw,alaw
 auth=auth{{ ext.number }}
-aors=aor{{ ext.number }}
+aors={{ ext.number }}
 direct_media=no
 rtp_symmetric=yes
 force_rport=yes
@@ -34,7 +34,7 @@ auth_type=userpass
 username={{ ext.number }}
 password={{ ext.password }}
 
-[aor{{ ext.number }}]
+[{{ ext.number }}]
 type=aor
 max_contacts=2
 remove_existing=yes
