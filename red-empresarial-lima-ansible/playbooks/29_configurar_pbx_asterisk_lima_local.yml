@@ -1,0 +1,8 @@
+---
+- name: FASE 11A | Configurar PBX Asterisk Lima
+  hosts: pbx-asterisk-lima
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: asterisk_pbx_lima_fase11a

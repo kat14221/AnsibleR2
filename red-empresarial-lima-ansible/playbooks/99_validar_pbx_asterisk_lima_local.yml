@@ -1,0 +1,73 @@
+---
+- name: FASE 11A | Validar PBX Asterisk Lima
+  hosts: pbx-asterisk-lima
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: FASE 11A | Validar Hostname
+      ansible.builtin.command: hostname
+      register: val_hostname
+      failed_when: val_hostname.stdout != 'pbx-asterisk-lima'
+      changed_when: false
+
+    - name: FASE 11A | Validar IP en ens34
+      ansible.builtin.shell: ip -br addr show ens34 | grep -q '192.168.60.10/25'
+      changed_when: false
+
+    - name: FASE 11A | Validar Ruta Default
+      ansible.builtin.shell: ip route show default | grep -q '192.168.60.1'
+      changed_when: false
+
+    - name: FASE 11A | Validar DNS y resolucion
+      ansible.builtin.shell: getent hosts mon-zabbix-lima.jhalex.local
+      changed_when: false
+
+    - name: FASE 11A | Validar Conectividad Gateway
+      ansible.builtin.command: ping -c 1 192.168.60.1
+      changed_when: false
+
+    - name: FASE 11A | Validar Conectividad DNS
+      ansible.builtin.command: ping -c 1 192.168.40.10
+      changed_when: false
+
+    - name: FASE 11A | Validar Conectividad Zabbix
+      ansible.builtin.command: ping -c 1 192.168.70.2
+      changed_when: false
+
+    - name: FASE 11A | Validar Servicio Asterisk
+      ansible.builtin.command: systemctl is-active asterisk
+      register: val_svc
+      failed_when: val_svc.stdout != 'active'
+      changed_when: false
+
+    - name: FASE 11A | Validar Puerto SIP
+      ansible.builtin.shell: ss -lunpt | grep -q '5060'
+      changed_when: false
+
+    - name: FASE 11A | Validar Extensiones PJSIP
+      ansible.builtin.shell: asterisk -rx "pjsip show endpoints" | grep -E "1001|1002|1003"
+      changed_when: false
+
+    - name: FASE 11A | Validar Dialplan Interno
+      ansible.builtin.shell: asterisk -rx "dialplan show internal" | grep -E "1001|1002|1003|600"
+      changed_when: false
+
+    - name: FASE 11A | Validar RTP config
+      ansible.builtin.shell: grep -E "10000|20000" /etc/asterisk/rtp.conf
+      changed_when: false
+
+    - name: FASE 11A | Resumen de validacion
+      ansible.builtin.debug:
+        msg: |
+          FASE 11A PBX ASTERISK LIMA — VALIDACIÓN FINAL
+          Hostname: OK
+          IP VLAN60: OK
+          Gateway: OK
+          DNS interno: OK
+          Asterisk activo: OK
+          SIP 5060: OK
+          Extensiones PJSIP: OK
+          Dialplan interno: OK
+          RTP 10000-20000: OK
+          Estado final: VALIDADO

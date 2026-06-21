@@ -1,0 +1,43 @@
+; ============================================================
+; JHALEX PERU S.A.C. - FASE 11A
+; PBX Asterisk Lima - PJSIP
+; Gestionado por Ansible
+; No editar manualmente
+; ============================================================
+
+[global]
+type=global
+user_agent=JHALEX-PBX-LIMA
+
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+
+{% for ext in fase11a_extensions %}
+[{{ ext.number }}]
+type=endpoint
+context=internal
+disallow=all
+allow=ulaw,alaw
+auth=auth{{ ext.number }}
+aors=aor{{ ext.number }}
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+callerid="{{ ext.name }}" <{{ ext.number }}>
+
+[auth{{ ext.number }}]
+type=auth
+auth_type=userpass
+username={{ ext.number }}
+password={{ ext.password }}
+
+[aor{{ ext.number }}]
+type=aor
+max_contacts=2
+remove_existing=yes
+qualify_frequency=30
+
+{% endfor %}

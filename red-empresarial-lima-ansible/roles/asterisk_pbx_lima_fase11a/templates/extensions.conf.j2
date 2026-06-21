@@ -1,0 +1,27 @@
+; ============================================================
+; JHALEX PERU S.A.C. - FASE 11A
+; PBX Asterisk Lima - Dialplan interno
+; Gestionado por Ansible
+; No editar manualmente
+; ============================================================
+
+[general]
+static=yes
+writeprotect=no
+clearglobalvars=no
+
+[internal]
+; Llamadas internas entre extensiones JHALEX Lima
+
+{% for ext in fase11a_extensions %}
+exten => {{ ext.number }},1,NoOp(Llamada interna a {{ ext.name }} - {{ ext.number }})
+ same => n,Dial(PJSIP/{{ ext.number }},30)
+ same => n,Hangup()
+
+{% endfor %}
+
+; Prueba de eco
+exten => {{ fase11a_test_extensions.echo }},1,NoOp(Prueba de eco JHALEX Lima)
+ same => n,Answer()
+ same => n,Echo()
+ same => n,Hangup()

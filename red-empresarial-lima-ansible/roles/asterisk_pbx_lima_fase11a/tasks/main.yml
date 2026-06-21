@@ -1,0 +1,146 @@
+---
+# 1. Precheck de sistema operativo
+- name: FASE 11A | Precheck - Obtener facts de red
+  ansible.builtin.setup:
+    gather_subset:
+      - network
+
+- name: FASE 11A | Precheck - Verificar interfaz y red
+  ansible.builtin.fail:
+    msg: "La interfaz {{ fase11a_pbx_interface }} no existe o no tiene la IP {{ fase11a_pbx_ip }}"
+  when: >
+    fase11a_pbx_interface not in ansible_interfaces or
+    hostvars[inventory_hostname]['ansible_' + fase11a_pbx_interface]['ipv4']['address'] | default('') != fase11a_pbx_ip
+
+- name: FASE 11A | Precheck - Verificar ping a gateway
+  ansible.builtin.command: ping -c 1 {{ fase11a_pbx_gateway }}
+  register: ping_gw
+  changed_when: false
+
+- name: FASE 11A | Precheck - Verificar ping a DNS
+  ansible.builtin.command: ping -c 1 {{ fase11a_pbx_dns }}
+  register: ping_dns
+  changed_when: false
+
+- name: FASE 11A | Precheck - Verificar resolucion de Zabbix
+  ansible.builtin.command: getent hosts mon-zabbix-lima.jhalex.local
+  register: res_zabbix
+  changed_when: false
+
+# 2. Corregir hostname
+- name: FASE 11A | Cambiar hostname a {{ fase11a_pbx_hostname }}
+  ansible.builtin.hostname:
+    name: "{{ fase11a_pbx_hostname }}"
+
+- name: FASE 11A | Actualizar /etc/hosts con hostname
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^{{ fase11a_pbx_ip }}'
+    line: "{{ fase11a_pbx_ip }} {{ fase11a_pbx_fqdn }} {{ fase11a_pbx_hostname }}"
+    state: present
+
+# 3. Instalar paquetes
+- name: FASE 11A | Actualizar cache APT
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: FASE 11A | Instalar paquetes Asterisk (ignorando errores en opcionales como sngrep)
+  ansible.builtin.apt:
+    name: "{{ fase11a_asterisk_packages }}"
+    state: present
+  ignore_errors: true
+  register: apt_install
+
+- name: FASE 11A | Fallar si Asterisk core no se instalo
+  ansible.builtin.command: dpkg -l asterisk
+  register: ast_installed
+  changed_when: false
+  failed_when: ast_installed.rc != 0
+
+# 4. Habilitar servicio
+- name: FASE 11A | Habilitar e iniciar Asterisk
+  ansible.builtin.systemd:
+    name: asterisk
+    enabled: yes
+    state: started
+
+# 5. Backup de config
+- name: FASE 11A | Crear directorio de backup
+  ansible.builtin.file:
+    path: /etc/asterisk/backup_jhalex_fase11a
+    state: directory
+    mode: '0755'
+
+- name: FASE 11A | Copiar configs existentes a backup
+  ansible.builtin.copy:
+    src: "/etc/asterisk/{{ item }}"
+    dest: "/etc/asterisk/backup_jhalex_fase11a/{{ item }}.bak"
+    remote_src: yes
+    force: no
+  loop:
+    - pjsip.conf
+    - extensions.conf
+    - rtp.conf
+  ignore_errors: true
+
+# 6, 7, 8, 9. Desplegar templates (PJSIP, Dialplan, RTP)
+- name: FASE 11A | Desplegar configuracion de Asterisk
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/asterisk/{{ item }}"
+    owner: asterisk
+    group: asterisk
+    mode: '0640'
+  loop:
+    - pjsip.conf
+    - extensions.conf
+    - rtp.conf
+  notify: Restart Asterisk
+
+# 10. Firewall local
+- name: FASE 11A | Verificar estado de UFW
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+
+- name: FASE 11A | Configurar UFW para Asterisk si esta activo
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: udp
+  loop:
+    - "{{ fase11a_sip_port }}"
+    - "{{ fase11a_rtp_start }}:{{ fase11a_rtp_end }}"
+  when: "'Status: active' in ufw_status.stdout"
+
+# 11. Reiniciar Asterisk se hara por el handler
+
+- name: FASE 11A | Forzar handlers (Restart Asterisk)
+  ansible.builtin.meta: flush_handlers
+
+# 12. Validaciones internas
+- name: FASE 11A | Validar Asterisk Core version
+  ansible.builtin.command: asterisk -rx "core show version"
+  register: ast_ver
+  changed_when: false
+
+- name: FASE 11A | Validar PJSIP Transports
+  ansible.builtin.command: asterisk -rx "pjsip show transports"
+  register: pjsip_transports
+  changed_when: false
+
+- name: FASE 11A | Validar PJSIP Endpoints
+  ansible.builtin.command: asterisk -rx "pjsip show endpoints"
+  register: pjsip_endpoints
+  changed_when: false
+
+- name: FASE 11A | Validar Dialplan Internal
+  ansible.builtin.command: asterisk -rx "dialplan show internal"
+  register: dp_internal
+  changed_when: false
+
+- name: FASE 11A | Mostrar resultados de validacion
+  ansible.builtin.debug:
+    msg: |
+      Asterisk Version: {{ ast_ver.stdout }}
+      PJSIP Endpoints: {{ pjsip_endpoints.stdout }}

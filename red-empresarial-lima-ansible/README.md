@@ -837,3 +837,13 @@ Si es necesario revertir:
 2. `sudo ovs-vsctl --if-exists del-port <bridge> ensXX`
 3. `sudo ovs-vsctl --may-exist add-bond <bridge> <bond> ensXX ensYY bond_mode=active-backup`
 4. Restaurar configuración OVS (`other_config`, etc). Ver README en rol `switching_l2_nobond_rstp_fase4c`.
+   
+ # #   F a s e   1 1 A      P B X   A s t e r i s k   L i m a  
+    
+ ` ` ` b a s h  
+ c d   ~ / A n s i b l e R 2 / r e d - e m p r e s a r i a l - l i m a - a n s i b l e  
+ s u d o   e n v   A N S I B L E _ R O L E S _ P A T H = . / r o l e s   a n s i b l e - p l a y b o o k   - i   i n v e n t o r i e s / l o c a l / h o s t s . y m l   p l a y b o o k s / 2 9 _ c o n f i g u r a r _ p b x _ a s t e r i s k _ l i m a _ l o c a l . y m l   - - s y n t a x - c h e c k  
+ s u d o   e n v   A N S I B L E _ R O L E S _ P A T H = . / r o l e s   a n s i b l e - p l a y b o o k   - i   i n v e n t o r i e s / l o c a l / h o s t s . y m l   p l a y b o o k s / 2 9 _ c o n f i g u r a r _ p b x _ a s t e r i s k _ l i m a _ l o c a l . y m l   - v v  
+ s u d o   e n v   A N S I B L E _ R O L E S _ P A T H = . / r o l e s   a n s i b l e - p l a y b o o k   - i   i n v e n t o r i e s / l o c a l / h o s t s . y m l   p l a y b o o k s / 9 9 _ v a l i d a r _ p b x _ a s t e r i s k _ l i m a _ l o c a l . y m l   - v v  
+ ` ` `  
+ 

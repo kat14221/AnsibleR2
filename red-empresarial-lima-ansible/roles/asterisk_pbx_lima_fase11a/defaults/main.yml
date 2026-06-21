@@ -1,0 +1,40 @@
+---
+fase11a_pbx_hostname: "pbx-asterisk-lima"
+fase11a_pbx_domain: "jhalex.local"
+fase11a_pbx_fqdn: "pbx-asterisk-lima.jhalex.local"
+
+fase11a_pbx_ip: "192.168.60.10"
+fase11a_pbx_prefix: "25"
+fase11a_pbx_gateway: "192.168.60.1"
+fase11a_pbx_dns: "192.168.40.10"
+fase11a_pbx_interface: "ens34"
+
+fase11a_sip_transport: "udp"
+fase11a_sip_port: 5060
+fase11a_rtp_start: 10000
+fase11a_rtp_end: 20000
+
+fase11a_asterisk_packages:
+  - asterisk
+  - asterisk-core-sounds-es
+  - asterisk-core-sounds-en
+  - tcpdump
+  - net-tools
+  - sngrep
+
+fase11a_extensions:
+  - number: "1001"
+    name: "ADMIN-LIMA"
+    description: "Softphone administrativo Windows"
+    password: "Jhalex1001-2026!"
+  - number: "1002"
+    name: "CLIENT-LIMA"
+    description: "Softphone cliente Linux"
+    password: "Jhalex1002-2026!"
+  - number: "1003"
+    name: "PHONE-LIMA-01"
+    description: "Telefono IP simulado futuro"
+    password: "Jhalex1003-2026!"
+
+fase11a_test_extensions:
+  echo: "600"
