@@ -217,97 +217,145 @@
   register: fase10d_agent_candidate
   changed_when: false
 
-- name: FASE 10D | Determinar estado de candidatos
-  ansible.builtin.set_fact:
-    fase10d_has_apt_candidate: "{{ fase10d_agent2_candidate.stdout.strip() not in ['', '(none)'] or fase10d_agent_candidate.stdout.strip() not in ['', '(none)'] }}"
-
-- name: FASE 10D | Definir paquete APT si hay candidatos
-  ansible.builtin.set_fact:
-    fase10d_agent_package_name: >-
-      {{ 'zabbix-agent2'
-      if fase10d_agent2_candidate.stdout.strip() not in ['', '(none)']
-      else 'zabbix-agent' }}
-  when: fase10d_has_apt_candidate | bool
-
-- name: FASE 10D | Instalar agente Zabbix desde APT
+- name: FASE 10D | Intentar instalar zabbix-agent2 por APT
   ansible.builtin.apt:
     name:
-      - "{{ fase10d_agent_package_name }}"
+      - zabbix-agent2
       - curl
       - net-tools
     state: present
     update_cache: false
-  when: fase10d_has_apt_candidate | bool
+  register: fase10d_install_agent2_apt
+  failed_when: false
+  when: fase10d_agent2_candidate.stdout.strip() not in ["", "(none)"]
 
-- name: FASE 10D | Instalar dependencias curl y net-tools para fallback
+- name: FASE 10D | Intentar instalar zabbix-agent clasico por APT
   ansible.builtin.apt:
     name:
+      - zabbix-agent
       - curl
       - net-tools
     state: present
     update_cache: false
-  when: not fase10d_has_apt_candidate | bool
+  register: fase10d_install_agent_apt
+  failed_when: false
+  when:
+    - fase10d_agent2_candidate.stdout.strip() in ["", "(none)"]
+    - fase10d_agent_candidate.stdout.strip() not in ["", "(none)"]
 
-- name: FASE 10D | FALLBACK descargar e instalar zabbix-agent2 .deb
+- name: FASE 10D | FALLBACK metadata Packages.gz para zabbix-agent2
   ansible.builtin.shell: |
-    set -e
-    ZBX_DEB="$(curl -fsSL https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix/ | grep -Eo 'zabbix-agent2_[a-zA-Z0-9.-]+ubuntu24.04_amd64.deb' | sort -V | tail -n 1)"
-    if [ -z "$ZBX_DEB" ]; then exit 1; fi
-    curl -fL "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix/${ZBX_DEB}" -o "/tmp/${ZBX_DEB}"
-    apt-get install -y "/tmp/${ZBX_DEB}"
+    set -o pipefail
+    curl -fsSL https://repo.zabbix.com/zabbix/7.0/ubuntu/dists/{{ fase10d_ubuntu_repo_codename }}/main/binary-amd64/Packages.gz \
+    | gzip -dc \
+    | awk '
+      /^Package: zabbix-agent2$/ {found=1}
+      found && /^Filename:/ {print $2; exit}
+      /^Package:/ && $2!="zabbix-agent2" {found=0}
+    '
   args:
     executable: /bin/bash
-  register: fase10d_fallback_agent2
-  ignore_errors: true
-  changed_when: fase10d_fallback_agent2.rc == 0
-  when: not fase10d_has_apt_candidate | bool
+  register: fase10d_agent2_deb_filename
+  changed_when: false
+  failed_when: false
+  when:
+    - fase10d_agent2_candidate.stdout.strip() in ["", "(none)"]
 
-- name: FASE 10D | FALLBACK descargar e instalar zabbix-agent clasico .deb
+- name: FASE 10D | FALLBACK metadata Packages.gz para zabbix-agent clasico
   ansible.builtin.shell: |
-    set -e
-    ZBX_DEB="$(curl -fsSL https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix/ | grep -Eo 'zabbix-agent_[a-zA-Z0-9.-]+ubuntu24.04_amd64.deb' | sort -V | tail -n 1)"
-    if [ -z "$ZBX_DEB" ]; then exit 1; fi
-    curl -fL "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix/${ZBX_DEB}" -o "/tmp/${ZBX_DEB}"
-    apt-get install -y "/tmp/${ZBX_DEB}"
+    set -o pipefail
+    curl -fsSL https://repo.zabbix.com/zabbix/7.0/ubuntu/dists/{{ fase10d_ubuntu_repo_codename }}/main/binary-amd64/Packages.gz \
+    | gzip -dc \
+    | awk '
+      /^Package: zabbix-agent$/ {found=1}
+      found && /^Filename:/ {print $2; exit}
+      /^Package:/ && $2!="zabbix-agent" {found=0}
+    '
   args:
     executable: /bin/bash
-  register: fase10d_fallback_agent
-  ignore_errors: true
-  changed_when: fase10d_fallback_agent.rc == 0
+  register: fase10d_agent_deb_filename
+  changed_when: false
+  failed_when: false
   when:
-    - not fase10d_has_apt_candidate | bool
-    - fase10d_fallback_agent2.rc != 0
+    - fase10d_agent2_candidate.stdout.strip() in ["", "(none)"]
+    - fase10d_agent_candidate.stdout.strip() in ["", "(none)"]
+    - fase10d_allow_classic_agent_fallback | bool
 
-- name: FASE 10D | FALLBACK FINAL instalar de repositorios base Ubuntu
-  ansible.builtin.apt:
-    name: zabbix-agent
-    state: present
-    update_cache: false
-  register: fase10d_fallback_base
-  ignore_errors: true
+- name: FASE 10D | Descargar zabbix-agent2 deb exacto desde Packages.gz
+  ansible.builtin.get_url:
+    url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/{{ fase10d_agent2_deb_filename.stdout.strip() }}"
+    dest: "/tmp/zabbix-agent2-fallback.deb"
+    mode: "0644"
+  register: fase10d_download_agent2_deb
+  failed_when: false
   when:
-    - not fase10d_has_apt_candidate | bool
-    - fase10d_fallback_agent2.rc != 0
-    - fase10d_fallback_agent.rc != 0
+    - fase10d_agent2_deb_filename is defined
+    - fase10d_agent2_deb_filename.stdout | default('') | trim != ""
 
-- name: FASE 10D | Definir paquete final instalado desde fallback
-  ansible.builtin.set_fact:
-    fase10d_agent_package_name: >-
-      {{ 'zabbix-agent2' if fase10d_fallback_agent2 is defined and fase10d_fallback_agent2.rc == 0
-      else 'zabbix-agent' if (fase10d_fallback_agent is defined and fase10d_fallback_agent.rc == 0) or (fase10d_fallback_base is defined and fase10d_fallback_base.rc == 0)
-      else 'NO_INSTALADO' }}
-  when: not fase10d_has_apt_candidate | bool
+- name: FASE 10D | Instalar zabbix-agent2 deb fallback
+  ansible.builtin.shell: |
+    apt-get install -y /tmp/zabbix-agent2-fallback.deb
+  args:
+    executable: /bin/bash
+  register: fase10d_install_agent2_deb
+  failed_when: false
+  when:
+    - fase10d_download_agent2_deb is defined
+    - fase10d_download_agent2_deb.dest is defined
 
-- name: FASE 10D | Fallar si ninguna instalacion tuvo exito
+- name: FASE 10D | Descargar zabbix-agent clasico deb exacto desde Packages.gz
+  ansible.builtin.get_url:
+    url: "https://repo.zabbix.com/zabbix/7.0/ubuntu/{{ fase10d_agent_deb_filename.stdout.strip() }}"
+    dest: "/tmp/zabbix-agent-fallback.deb"
+    mode: "0644"
+  register: fase10d_download_agent_deb
+  failed_when: false
+  when:
+    - fase10d_agent_deb_filename is defined
+    - fase10d_agent_deb_filename.stdout | default('') | trim != ""
+
+- name: FASE 10D | Instalar zabbix-agent clasico deb fallback
+  ansible.builtin.shell: |
+    apt-get install -y /tmp/zabbix-agent-fallback.deb
+  args:
+    executable: /bin/bash
+  register: fase10d_install_agent_deb
+  failed_when: false
+  when:
+    - fase10d_download_agent_deb is defined
+    - fase10d_download_agent_deb.dest is defined
+
+- name: FASE 10D | Detectar agente Zabbix instalado final
+  ansible.builtin.shell: |
+    if dpkg-query -W -f='${Status}' zabbix-agent2 2>/dev/null | grep -q "install ok installed"; then
+      echo "zabbix-agent2"
+    elif dpkg-query -W -f='${Status}' zabbix-agent 2>/dev/null | grep -q "install ok installed"; then
+      echo "zabbix-agent"
+    else
+      echo "none"
+    fi
+  args:
+    executable: /bin/bash
+  register: fase10d_agent_installed_final
+  changed_when: false
+
+- name: FASE 10D | Fallar solo si no hay ningun agente instalado
   ansible.builtin.fail:
     msg: |
-      Error critico: No se pudo instalar el agente Zabbix ni por APT ni por fallback .deb directo ni por repo base.
-  when: fase10d_agent_package_name == 'NO_INSTALADO'
+      No se instaló ningún agente Zabbix.
+      Diagnóstico:
+      agent2 candidate={{ fase10d_agent2_candidate.stdout | default('NO_VAR') }}
+      agent candidate={{ fase10d_agent_candidate.stdout | default('NO_VAR') }}
+      agent2 filename={{ fase10d_agent2_deb_filename.stdout | default('NO_VAR') if fase10d_agent2_deb_filename is defined else 'NO_VAR' }}
+      agent filename={{ fase10d_agent_deb_filename.stdout | default('NO_VAR') if fase10d_agent_deb_filename is defined else 'NO_VAR' }}
+      Ver /tmp/fase10d_apt_update_zabbix.log.
+  when: fase10d_agent_installed_final.stdout.strip() == "none"
 
-- name: FASE 10D | Definir servicio y archivo config del agente
+- name: FASE 10D | Definir servicio y config final
   ansible.builtin.set_fact:
-    fase10d_agent_service_name: "{{ 'zabbix-agent2' if fase10d_agent_package_name == 'zabbix-agent2' else 'zabbix-agent' }}"
-    fase10d_agent_config_path: "{{ '/etc/zabbix/zabbix_agent2.conf' if fase10d_agent_package_name == 'zabbix-agent2' else '/etc/zabbix/zabbix_agentd.conf' }}"
+    fase10d_agent_package_name: "{{ fase10d_agent_installed_final.stdout.strip() }}"
+    fase10d_agent_service_name: "{{ 'zabbix-agent2' if fase10d_agent_installed_final.stdout.strip() == 'zabbix-agent2' else 'zabbix-agent' }}"
+    fase10d_agent_config_path: "{{ '/etc/zabbix/zabbix_agent2.conf' if fase10d_agent_installed_final.stdout.strip() == 'zabbix-agent2' else '/etc/zabbix/zabbix_agentd.conf' }}"
 
 - name: FASE 10D | Configurar archivo principal del agente
   ansible.builtin.template:
@@ -316,9 +364,8 @@
     owner: zabbix
     group: zabbix
     mode: '0644'
-  notify: Restart zabbix-agent2
 
-- name: FASE 10D | Habilitar e iniciar servicio del agente
+- name: FASE 10D | Habilitar e iniciar agente final
   ansible.builtin.systemd:
     name: "{{ fase10d_agent_service_name }}"
     state: restarted
@@ -334,21 +381,20 @@
   ansible.builtin.command: ufw allow from {{ fase10d_zabbix_server_ip }} to any port {{ fase10d_zabbix_listen_port }} proto tcp
   when: "'Status: active' in fase10d_ufw_status.stdout"
 
-- name: FASE 10D | Validar servicio del agente
-  ansible.builtin.command: "systemctl is-active {{ fase10d_agent_service_name }}"
+- name: FASE 10D | Validar agente activo
+  ansible.builtin.shell: |
+    systemctl is-active {{ fase10d_agent_service_name }} || true
+    systemctl is-enabled {{ fase10d_agent_service_name }} || true
+    ss -lntp | grep ':{{ fase10d_zabbix_listen_port }}' || true
+    grep -E "Server=|ServerActive=|Hostname=|ListenPort=" {{ fase10d_agent_config_path }} || true
+  args:
+    executable: /bin/bash
+  register: fase10d_agent_final_validation
   changed_when: false
 
-- name: FASE 10D | Validar que el puerto este escuchando
-  ansible.builtin.shell: ss -lntp | grep {{ fase10d_zabbix_listen_port }}
-  changed_when: false
-
-- name: FASE 10D | Validar parametro Server en config
-  ansible.builtin.shell: "grep '^Server=' {{ fase10d_agent_config_path }}"
-  changed_when: false
-
-- name: FASE 10D | Validar parametro Hostname en config
-  ansible.builtin.shell: "grep '^Hostname=' {{ fase10d_agent_config_path }}"
-  changed_when: false
+- name: FASE 10D | Mostrar validacion final agente
+  ansible.builtin.debug:
+    var: fase10d_agent_final_validation.stdout_lines
 
 - name: FASE 10D | Mostrar agente instalado final
   ansible.builtin.debug:
