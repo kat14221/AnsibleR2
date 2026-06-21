@@ -365,11 +365,22 @@
     group: zabbix
     mode: '0644'
 
-- name: FASE 10D | Habilitar e iniciar agente final
-  ansible.builtin.systemd:
-    name: "{{ fase10d_agent_service_name }}"
-    state: restarted
-    enabled: true
+- name: FASE 10D | Deshabilitar agente Zabbix conflictivo e iniciar agente final
+  ansible.builtin.shell: |
+    if [ "{{ fase10d_agent_service_name }}" = "zabbix-agent2" ]; then
+      systemctl stop zabbix-agent || true
+      systemctl disable zabbix-agent || true
+      systemctl restart zabbix-agent2
+      systemctl enable zabbix-agent2
+    else
+      systemctl stop zabbix-agent2 || true
+      systemctl disable zabbix-agent2 || true
+      systemctl restart zabbix-agent
+      systemctl enable zabbix-agent
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: true
 
 - name: FASE 10D | Chequear estado de UFW
   ansible.builtin.command: ufw status
@@ -383,10 +394,9 @@
 
 - name: FASE 10D | Validar agente activo
   ansible.builtin.shell: |
-    systemctl is-active {{ fase10d_agent_service_name }} || true
-    systemctl is-enabled {{ fase10d_agent_service_name }} || true
-    ss -lntp | grep ':{{ fase10d_zabbix_listen_port }}' || true
-    grep -E "Server=|ServerActive=|Hostname=|ListenPort=" {{ fase10d_agent_config_path }} || true
+    systemctl is-active zabbix-agent2 || systemctl is-active zabbix-agent
+    ss -lntp | grep 10050
+    grep -E "Server=|ServerActive=|Hostname=|ListenPort=" /etc/zabbix/zabbix_agent2.conf /etc/zabbix/zabbix_agentd.conf 2>/dev/null || true
   args:
     executable: /bin/bash
   register: fase10d_agent_final_validation
