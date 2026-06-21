@@ -4,6 +4,9 @@
   connection: local
   become: true
   
+  vars_files:
+    - ../host_vars/client-lima.yml
+  
   pre_tasks:
     - name: Verificar que el hostname sea compatible con CLIENT-LIMA
       ansible.builtin.shell: hostname

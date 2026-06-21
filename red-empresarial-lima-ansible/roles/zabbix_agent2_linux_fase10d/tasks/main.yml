@@ -1,9 +1,18 @@
 ---
+- name: FASE 10D | Mostrar variables cargadas del agente
+  ansible.builtin.debug:
+    msg:
+      - "fase10d_zabbix_agent_enabled={{ fase10d_zabbix_agent_enabled | default('NO_DEFINIDO') }}"
+      - "fase10d_zabbix_server_ip={{ fase10d_zabbix_server_ip | default('NO_DEFINIDO') }}"
+      - "fase10d_zabbix_agent_hostname={{ fase10d_zabbix_agent_hostname | default('NO_DEFINIDO') }}"
+      - "inventory_hostname={{ inventory_hostname }}"
+      - "ansible_hostname={{ ansible_hostname | default('NO_FACT') }}"
+
 - name: FASE 10D | Verificar que la configuracion del agente este habilitada
   ansible.builtin.assert:
     that:
       - fase10d_zabbix_agent_enabled | bool
-    msg: "La instalacion del agente Zabbix esta deshabilitada para este host."
+    fail_msg: "La instalacion del agente Zabbix esta deshabilitada para este host o no se cargo su host_vars."
 
 - name: FASE 10D | Comprobar disponibilidad de zabbix-agent2 en repositorios
   ansible.builtin.shell: apt-cache search ^zabbix-agent2$

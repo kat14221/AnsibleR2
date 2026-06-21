@@ -4,6 +4,9 @@
   connection: local
   become: true
   
+  vars_files:
+    - ../host_vars/doc-file-backup-lima.yml
+  
   pre_tasks:
     - name: Verificar que el hostname sea compatible con DOC-FILE-BACKUP-LIMA
       ansible.builtin.shell: hostname
