@@ -66,18 +66,61 @@
   gather_facts: false
 
   tasks:
-    - name: FASE 11C | Validar endpoint 1002
-      ansible.builtin.command: asterisk -rx "pjsip show endpoint 1002"
+    - name: FASE 11C | Verificar que Asterisk existe en PBX
+      ansible.builtin.command: which asterisk
+      become: true
+      register: fase11c_which_asterisk
+      changed_when: false
+      ignore_errors: true
+
+    - name: FASE 11C | Fallar si Asterisk no existe en PBX
+      ansible.builtin.fail:
+        msg: "Asterisk no está instalado o no está en PATH en PBX-ASTERISK-LIMA. Verificar inventario o host destino."
+      when: fase11c_which_asterisk.rc != 0
+
+    - name: FASE 11C | Validar endpoint 1002 en PBX
+      ansible.builtin.command:
+        argv:
+          - asterisk
+          - -rx
+          - pjsip show endpoint 1002
+      become: true
+      register: fase11c_pbx_endpoint_1002
       changed_when: false
 
-    - name: FASE 11C | Validar aor 1002
-      ansible.builtin.command: asterisk -rx "pjsip show aor 1002"
+    - name: FASE 11C | Validar AOR 1002 en PBX
+      ansible.builtin.command:
+        argv:
+          - asterisk
+          - -rx
+          - pjsip show aor 1002
+      become: true
+      register: fase11c_pbx_aor_1002
       changed_when: false
 
-    - name: FASE 11C | Validar auth 1002
-      ansible.builtin.command: asterisk -rx "pjsip show auth auth1002"
+    - name: FASE 11C | Validar AUTH 1002 en PBX
+      ansible.builtin.command:
+        argv:
+          - asterisk
+          - -rx
+          - pjsip show auth auth1002
+      become: true
+      register: fase11c_pbx_auth_1002
       changed_when: false
 
-    - name: FASE 11C | Validar contacts (debe contener 1002)
-      ansible.builtin.shell: asterisk -rx "pjsip show contacts" | grep "1002/sip:1002@192.168.20.20"
+    - name: FASE 11C | Validar contactos PJSIP en PBX
+      ansible.builtin.command:
+        argv:
+          - asterisk
+          - -rx
+          - pjsip show contacts
+      become: true
+      register: fase11c_pbx_contacts
       changed_when: false
+
+    - name: FASE 11C | Verificar que 1002 este registrado desde CLIENT-LIMA
+      ansible.builtin.assert:
+        that:
+          - "'1002/sip:1002@192.168.20.20' in fase11c_pbx_contacts.stdout"
+        fail_msg: "La extension 1002 de CLIENT-LIMA no aparece registrada en Asterisk."
+        success_msg: "La extension 1002 aparece registrada correctamente desde CLIENT-LIMA."
