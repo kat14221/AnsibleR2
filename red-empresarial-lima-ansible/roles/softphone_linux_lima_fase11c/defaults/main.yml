@@ -1,0 +1,11 @@
+---
+fase11c_client_hostname: "client-lima"
+fase11c_client_ip: "192.168.20.20"
+fase11c_pbx_ip: "192.168.60.10"
+fase11c_extension: "1002"
+fase11c_auth_user: "1002"
+fase11c_auth_password: "Jhalex1002-2026!"
+fase11c_display_name: "CLIENT-LIMA"
+fase11c_config_dir: "/var/lib/baresip/.baresip"
+fase11c_service_user: "baresip"
+fase11c_service_name: "baresip-1002"

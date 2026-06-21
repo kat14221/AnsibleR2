@@ -1,0 +1,54 @@
+---
+- name: FASE 11C | Validar Softphone Linux CLIENT-LIMA
+  hosts: client-lima
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: FASE 11C | Validar hostname
+      ansible.builtin.command: hostname
+      register: val_hostname
+      changed_when: false
+
+    - name: FASE 11C | Validar IPs
+      ansible.builtin.command: ip -br addr
+      register: val_ips
+      changed_when: false
+
+    - name: FASE 11C | Validar rutas
+      ansible.builtin.command: ip route
+      register: val_route
+      changed_when: false
+
+    - name: FASE 11C | Validar conectividad a PBX
+      ansible.builtin.command: ping -c 3 192.168.60.10
+      changed_when: false
+
+    - name: FASE 11C | Validar que baresip-1002 este activo
+      ansible.builtin.command: systemctl is-active baresip-1002
+      register: val_active
+      changed_when: false
+
+    - name: FASE 11C | Validar que baresip-1002 este habilitado
+      ansible.builtin.command: systemctl is-enabled baresip-1002
+      register: val_enabled
+      changed_when: false
+
+    - name: FASE 11C | Mostrar logs de baresip-1002
+      ansible.builtin.command: journalctl -u baresip-1002 -n 40 --no-pager
+      register: val_logs
+      changed_when: false
+
+    - name: FASE 11C | Resumen
+      ansible.builtin.debug:
+        msg: |
+          FASE 11C SOFTPHONE LINUX CLIENT-LIMA — VALIDACIÓN FINAL
+          Hostname: {{ val_hostname.stdout }}
+          Baresip Service Active: {{ val_active.stdout }}
+          Baresip Service Enabled: {{ val_enabled.stdout }}
+          
+          Logs recientes:
+          {{ val_logs.stdout }}
+          
+          RECUERDA VALIDAR EL REGISTRO DESDE PBX-ASTERISK-LIMA:
+          sudo asterisk -rx "pjsip show contacts"

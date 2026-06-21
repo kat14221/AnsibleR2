@@ -1,0 +1,8 @@
+---
+- name: FASE 11C | Configurar Softphone Linux CLIENT-LIMA
+  hosts: client-lima
+  become: true
+  gather_facts: false
+
+  roles:
+    - role: softphone_linux_lima_fase11c

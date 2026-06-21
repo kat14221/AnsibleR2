@@ -1,0 +1,16 @@
+[Unit]
+Description=JHALEX CLIENT-LIMA SIP softphone 1002 using baresip
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ fase11c_service_user }}
+Group={{ fase11c_service_user }}
+WorkingDirectory=/var/lib/baresip
+ExecStart=/usr/bin/baresip -f /var/lib/baresip/.baresip
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

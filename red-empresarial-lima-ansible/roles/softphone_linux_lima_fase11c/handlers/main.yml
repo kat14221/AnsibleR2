@@ -1,0 +1,9 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Restart baresip
+  ansible.builtin.systemd:
+    name: "{{ fase11c_service_name }}"
+    state: restarted

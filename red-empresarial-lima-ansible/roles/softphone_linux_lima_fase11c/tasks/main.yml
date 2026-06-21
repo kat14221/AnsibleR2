@@ -1,0 +1,82 @@
+---
+# 1. Validar conectividad hacia PBX
+- name: FASE 11C | Precheck - Validar ping a PBX Asterisk
+  ansible.builtin.command: ping -c 3 {{ fase11c_pbx_ip }}
+  changed_when: false
+
+# 2. Instalar paquetes
+- name: FASE 11C | Actualizar cache APT
+  ansible.builtin.apt:
+    update_cache: yes
+
+- name: FASE 11C | Instalar paquetes baresip
+  ansible.builtin.apt:
+    name:
+      - baresip
+      - baresip-core
+      - alsa-utils
+    state: present
+  ignore_errors: true
+  register: apt_install
+
+- name: FASE 11C | Fallar si baresip no se instalo
+  ansible.builtin.command: dpkg -l baresip
+  register: baresip_installed
+  changed_when: false
+  failed_when: baresip_installed.rc != 0
+
+# 3. Crear usuario de sistema
+- name: FASE 11C | Crear usuario {{ fase11c_service_user }}
+  ansible.builtin.user:
+    name: "{{ fase11c_service_user }}"
+    home: "/var/lib/baresip"
+    shell: "/usr/sbin/nologin"
+    system: yes
+    create_home: yes
+
+# 4. Crear carpeta de config
+- name: FASE 11C | Crear directorio de configuracion .baresip
+  ansible.builtin.file:
+    path: "{{ fase11c_config_dir }}"
+    state: directory
+    owner: "{{ fase11c_service_user }}"
+    group: "{{ fase11c_service_user }}"
+    mode: '0750'
+
+# 5 y 6. Templates
+- name: FASE 11C | Crear archivo de cuenta SIP
+  ansible.builtin.template:
+    src: accounts.j2
+    dest: "{{ fase11c_config_dir }}/accounts"
+    owner: "{{ fase11c_service_user }}"
+    group: "{{ fase11c_service_user }}"
+    mode: '0600'
+  notify: Restart baresip
+
+- name: FASE 11C | Crear archivo de configuracion base
+  ansible.builtin.template:
+    src: config.j2
+    dest: "{{ fase11c_config_dir }}/config"
+    owner: "{{ fase11c_service_user }}"
+    group: "{{ fase11c_service_user }}"
+    mode: '0644'
+  notify: Restart baresip
+
+# 7. Crear servicio systemd
+- name: FASE 11C | Crear servicio systemd para baresip
+  ansible.builtin.template:
+    src: baresip-1002.service.j2
+    dest: "/etc/systemd/system/{{ fase11c_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart baresip
+
+# 8. Activar servicio
+- name: FASE 11C | Activar e iniciar baresip-1002
+  ansible.builtin.systemd:
+    name: "{{ fase11c_service_name }}"
+    enabled: yes
+    state: started
