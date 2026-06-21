@@ -1,6 +1,3 @@
-$ErrorActionPreference = "Stop"
-Set-StrictMode -Version Latest
-
 param(
   [Parameter(Mandatory=$true)]
   [string]$ZabbixServer,
@@ -10,6 +7,9 @@ param(
 
   [string]$ZabbixVersion = "7.0.21"
 )
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

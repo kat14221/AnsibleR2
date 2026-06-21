@@ -40,6 +40,13 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 .\02_validar_zabbix_agent_windows.ps1
 ```
 
+## Validación local de sintaxis PowerShell
+En Windows, antes de ejecutar, puedes validar la sintaxis con:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\01_instalar_zabbix_agent_windows.ps1 -ZabbixServer "192.168.70.2" -Hostname "ADMIN-LIMA"
+```
+
 ## Validación final
 Desde el servidor `MON-ZABBIX-LIMA`:
 
