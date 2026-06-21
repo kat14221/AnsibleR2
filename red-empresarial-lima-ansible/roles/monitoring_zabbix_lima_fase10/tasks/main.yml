@@ -177,6 +177,98 @@
     state: present
     update_cache: true
 
+- name: FASE 10 | Instalar fping para checks ICMP de Zabbix
+  ansible.builtin.apt:
+    name:
+      - fping
+    state: present
+    update_cache: true
+
+- name: FASE 10 | Detectar ruta real de fping
+  ansible.builtin.shell: |
+    command -v fping
+  args:
+    executable: /bin/bash
+  register: fase10_fping_path
+  changed_when: false
+  failed_when: fase10_fping_path.stdout.strip() == ""
+
+- name: FASE 10 | Detectar ruta real de fping6 si existe
+  ansible.builtin.shell: |
+    command -v fping6 || true
+  args:
+    executable: /bin/bash
+  register: fase10_fping6_path
+  changed_when: false
+
+- name: FASE 10 | Crear symlink /usr/sbin/fping hacia ruta real
+  ansible.builtin.file:
+    src: "{{ fase10_fping_path.stdout.strip() }}"
+    dest: /usr/sbin/fping
+    state: link
+    force: true
+
+- name: FASE 10 | Crear symlink /usr/sbin/fping6 si existe fping6 real
+  ansible.builtin.file:
+    src: "{{ fase10_fping6_path.stdout.strip() }}"
+    dest: /usr/sbin/fping6
+    state: link
+    force: true
+  when: fase10_fping6_path.stdout.strip() != ""
+
+- name: FASE 10 | Crear symlink /usr/sbin/fping6 hacia fping si fping6 no existe
+  ansible.builtin.file:
+    src: "{{ fase10_fping_path.stdout.strip() }}"
+    dest: /usr/sbin/fping6
+    state: link
+    force: true
+  when: fase10_fping6_path.stdout.strip() == ""
+
+- name: FASE 10 | Instalar libcap2-bin para setcap
+  ansible.builtin.apt:
+    name: libcap2-bin
+    state: present
+    update_cache: true
+
+- name: FASE 10 | Aplicar capability cap_net_raw a fping
+  ansible.builtin.command: "setcap cap_net_raw+ep {{ fase10_fping_path.stdout.strip() }}"
+  changed_when: false
+  failed_when: false
+
+- name: FASE 10 | Aplicar capability cap_net_raw a fping6 si existe
+  ansible.builtin.command: "setcap cap_net_raw+ep {{ fase10_fping6_path.stdout.strip() }}"
+  changed_when: false
+  failed_when: false
+  when: fase10_fping6_path.stdout.strip() != ""
+
+- name: FASE 10 | Configurar FpingLocation en zabbix_server.conf
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^#?FpingLocation='
+    line: 'FpingLocation=/usr/sbin/fping'
+    create: false
+    backup: true
+
+- name: FASE 10 | Configurar Fping6Location en zabbix_server.conf
+  ansible.builtin.lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^#?Fping6Location='
+    line: 'Fping6Location=/usr/sbin/fping6'
+    create: false
+    backup: true
+
+- name: FASE 10 | Validar fping como usuario zabbix contra gateway VLAN70
+  ansible.builtin.command: sudo -u zabbix /usr/sbin/fping -c 3 192.168.70.1
+  register: fase10_fping_gateway70
+  changed_when: false
+  failed_when: fase10_fping_gateway70.rc != 0
+
+- name: FASE 10 | Validar fping como usuario zabbix contra gateway VLAN10
+  ansible.builtin.command: sudo -u zabbix /usr/sbin/fping -c 3 192.168.10.1
+  register: fase10_fping_gateway10
+  changed_when: false
+  failed_when: fase10_fping_gateway10.rc != 0
+
 - name: FASE 10 | Habilitar e iniciar PostgreSQL antes de configurar BD
   ansible.builtin.systemd:
     name: postgresql

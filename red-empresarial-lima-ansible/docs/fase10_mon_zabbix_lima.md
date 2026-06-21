@@ -21,14 +21,17 @@ El despliegue monolítico inicial incluye:
 - **PostgreSQL 16:** Motor de base de datos relacional elegido sobre MySQL/MariaDB por su excepcional rendimiento histórico en alta concurrencia de inserciones de monitoreo.
 
 ## 5. Targets iniciales a monitorear
-Se ha dejado el archivo `/etc/zabbix/jhalex_targets_lima.txt` documentando los equipos iniciales del ecosistema:
-- `LIM-DC01` (192.168.40.10)
+Se ha dejado el archivo `/etc/zabbix/jhalex_targets_lima.txt` documentando los equipos iniciales del ecosistema. Las IPs de validación reales son:
+- `ADMIN-LIMA` (192.168.10.20)
+- `CLIENT-LIMA` (192.168.20.20)
 - `DOC-FILE-BACKUP-LIMA` (192.168.80.2)
-- `SWCORELIM1` (192.168.99.11)
-- `SWCORELIM2` (192.168.99.12)
-- `Gateway VLAN70 VRRP` (192.168.70.1)
+- `MON-ZABBIX-LIMA` (192.168.70.2)
+- `LIM-DC01` (192.168.40.10)
 
-## 6. Acceso Web y Credenciales
+## 6. Monitoreo ICMP (Ping)
+El monitoreo ICMP en Zabbix depende de `fping`. En Ubuntu 26.04 el binario puede estar en `/usr/bin/fping`, mientras Zabbix espera `/usr/sbin/fping`. La fase crea symlinks, asigna los capabilities `cap_net_raw+ep` y configura `FpingLocation/Fping6Location` de manera automatizada.
+
+## 7. Acceso Web y Credenciales
 Se puede acceder al panel desde cualquier máquina autorizada (ej. `ADMIN-LIMA`) vía navegador en:
 `http://192.168.70.2/zabbix`
 

@@ -177,6 +177,51 @@
       ansible.builtin.debug:
         var: fase10_validate_conf_php_paths.stdout_lines
 
+    - name: FASE 10 | Validar existencia de fping
+      ansible.builtin.shell: |
+        echo "=== command -v fping ==="
+        command -v fping || true
+        echo "=== /usr/sbin/fping ==="
+        ls -l /usr/sbin/fping || true
+        echo "=== /usr/sbin/fping6 ==="
+        ls -l /usr/sbin/fping6 || true
+        echo "=== zabbix_server.conf fping ==="
+        grep -E '^FpingLocation=|^Fping6Location=' /etc/zabbix/zabbix_server.conf || true
+      args:
+        executable: /bin/bash
+      register: fase10_validate_fping_paths
+      changed_when: false
+
+    - name: FASE 10 | Mostrar validacion fping
+      ansible.builtin.debug:
+        var: fase10_validate_fping_paths.stdout_lines
+
+    - name: FASE 10 | Validar ICMP gateway VLAN10 con usuario zabbix
+      ansible.builtin.command: sudo -u zabbix /usr/sbin/fping -c 3 192.168.10.1
+      changed_when: false
+
+    - name: FASE 10 | Validar ICMP gateway VLAN40 con usuario zabbix
+      ansible.builtin.command: sudo -u zabbix /usr/sbin/fping -c 3 192.168.40.1
+      changed_when: false
+
+    - name: FASE 10 | Validar ICMP gateway VLAN70 con usuario zabbix
+      ansible.builtin.command: sudo -u zabbix /usr/sbin/fping -c 3 192.168.70.1
+      changed_when: false
+
+    - name: FASE 10 | Validar ICMP gateway VLAN80 con usuario zabbix
+      ansible.builtin.command: sudo -u zabbix /usr/sbin/fping -c 3 192.168.80.1
+      changed_when: false
+
+    - name: FASE 10 | Probar ICMP hosts clientes sin fallar
+      ansible.builtin.shell: |
+        sudo -u zabbix /usr/sbin/fping -c 3 192.168.10.20 || true
+        sudo -u zabbix /usr/sbin/fping -c 3 192.168.20.20 || true
+        sudo -u zabbix /usr/sbin/fping -c 3 192.168.80.2 || true
+      args:
+        executable: /bin/bash
+      register: fase10_validate_fping_hosts
+      changed_when: false
+
     - name: FASE 10 | Validar Frontend local Zabbix HTTP
       ansible.builtin.uri:
         url: "http://127.0.0.1/zabbix"
