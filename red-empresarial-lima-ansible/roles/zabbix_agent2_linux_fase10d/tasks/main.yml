@@ -14,28 +14,109 @@
       - fase10d_zabbix_agent_enabled | bool
     fail_msg: "La instalacion del agente Zabbix esta deshabilitada para este host o no se cargo su host_vars."
 
-- name: FASE 10D | Comprobar disponibilidad de zabbix-agent2 en repositorios
-  ansible.builtin.shell: apt-cache search ^zabbix-agent2$
-  register: fase10d_apt_search
+- name: FASE 10D | Verificar si zabbix-agent2 existe en APT
+  ansible.builtin.shell: |
+    apt-cache policy zabbix-agent2 | awk '/Candidate:/ {print $2}'
+  args:
+    executable: /bin/bash
+  register: fase10d_agent2_candidate_before
   changed_when: false
 
-- name: FASE 10D | Fallar si zabbix-agent2 no existe en el repositorio
-  ansible.builtin.fail:
-    msg: "El paquete zabbix-agent2 no existe en los repositorios de este host. Debes agregar el repositorio oficial de Zabbix compatible."
-  when: fase10d_apt_search.stdout.strip() == ""
+- name: FASE 10D | Detectar base Ubuntu real del sistema
+  ansible.builtin.shell: |
+    set -e
+    if grep -q '^UBUNTU_CODENAME=' /etc/os-release; then
+      . /etc/os-release
+      case "$UBUNTU_CODENAME" in
+        jammy) echo "22.04" ;;
+        noble) echo "24.04" ;;
+        resolute) echo "26.04" ;;
+        *) echo "UNKNOWN:$UBUNTU_CODENAME" ;;
+      esac
+      exit 0
+    fi
 
-- name: FASE 10D | Instalar paquetes base (curl, net-tools)
+    if grep -q '^VERSION_ID=' /etc/os-release && grep -q '^ID=ubuntu' /etc/os-release; then
+      . /etc/os-release
+      echo "$VERSION_ID"
+      exit 0
+    fi
+
+    if command -v lsb_release >/dev/null 2>&1; then
+      codename="$(lsb_release -sc)"
+      case "$codename" in
+        jammy) echo "22.04" ;;
+        noble) echo "24.04" ;;
+        resolute) echo "26.04" ;;
+        *) echo "UNKNOWN:$codename" ;;
+      esac
+      exit 0
+    fi
+
+    echo "UNKNOWN"
+  args:
+    executable: /bin/bash
+  register: fase10d_ubuntu_base_version
+  changed_when: false
+
+- name: FASE 10D | Mostrar diagnostico de SO y repo Zabbix
+  ansible.builtin.debug:
+    msg:
+      - "Sistema detectado: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      - "Base Ubuntu detectada: {{ fase10d_ubuntu_base_version.stdout }}"
+      - "Candidate zabbix-agent2 antes: {{ fase10d_agent2_candidate_before.stdout }}"
+
+- name: FASE 10D | Fallar si no hay repo Zabbix mapeado para esta base Ubuntu
+  ansible.builtin.fail:
+    msg: "No hay repo Zabbix definido para base Ubuntu {{ fase10d_ubuntu_base_version.stdout }}. Revisar /etc/os-release."
+  when:
+    - fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+    - fase10d_ubuntu_base_version.stdout not in fase10d_zabbix_repo_deb_by_ubuntu
+
+- name: FASE 10D | Descargar zabbix-release compatible
+  ansible.builtin.get_url:
+    url: "{{ fase10d_zabbix_repo_deb_by_ubuntu[fase10d_ubuntu_base_version.stdout] }}"
+    dest: "/tmp/zabbix-release-agent2.deb"
+    mode: "0644"
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Instalar zabbix-release compatible
+  ansible.builtin.apt:
+    deb: "/tmp/zabbix-release-agent2.deb"
+    state: present
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Actualizar cache APT tras agregar repo Zabbix
+  ansible.builtin.apt:
+    update_cache: true
+  when: fase10d_agent2_candidate_before.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Revalidar zabbix-agent2 en APT
+  ansible.builtin.shell: |
+    apt-cache policy zabbix-agent2 | awk '/Candidate:/ {print $2}'
+  args:
+    executable: /bin/bash
+  register: fase10d_agent2_candidate_after
+  changed_when: false
+
+- name: FASE 10D | Fallar si zabbix-agent2 sigue sin estar disponible
+  ansible.builtin.fail:
+    msg: |
+      zabbix-agent2 sigue sin estar disponible.
+      Base Ubuntu detectada: {{ fase10d_ubuntu_base_version.stdout }}
+      Candidate antes: {{ fase10d_agent2_candidate_before.stdout }}
+      Candidate despues: {{ fase10d_agent2_candidate_after.stdout }}
+      Revisar conectividad a repo.zabbix.com o compatibilidad de distro.
+  when: fase10d_agent2_candidate_after.stdout.strip() in ["", "(none)"]
+
+- name: FASE 10D | Instalar Zabbix Agent2
   ansible.builtin.apt:
     name:
+      - zabbix-agent2
       - curl
       - net-tools
     state: present
     update_cache: true
-
-- name: FASE 10D | Instalar zabbix-agent2
-  ansible.builtin.apt:
-    name: zabbix-agent2
-    state: present
 
 - name: FASE 10D | Configurar zabbix_agent2.conf
   ansible.builtin.template:
