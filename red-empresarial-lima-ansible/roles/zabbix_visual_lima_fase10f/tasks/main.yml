@@ -1,0 +1,47 @@
+---
+- name: FASE 10F | Instalar dependencias de Python
+  ansible.builtin.apt:
+    name: python3-requests
+    state: present
+    update_cache: yes
+  become: true
+
+- name: FASE 10F | Crear directorio para scripts de Zabbix
+  ansible.builtin.file:
+    path: /opt/jhalex/zabbix
+    state: directory
+    owner: "{{ ansible_user | default(lookup('env', 'USER')) }}"
+    group: "{{ ansible_user | default(lookup('env', 'USER')) }}"
+    mode: '0755'
+  become: true
+
+- name: FASE 10F | Copiar config de Zabbix API
+  ansible.builtin.template:
+    src: fase10f_zabbix_api_config.yml.j2
+    dest: /opt/jhalex/zabbix/fase10f_zabbix_api_config.yml
+    mode: '0600'
+  become: true
+
+- name: FASE 10F | Copiar script de configuracion
+  ansible.builtin.copy:
+    src: ../../../scripts/zabbix/fase10f_configurar_dashboard_mapa_alertas.py
+    dest: /opt/jhalex/zabbix/fase10f_configurar_dashboard_mapa_alertas.py
+    mode: '0755'
+  become: true
+
+- name: FASE 10F | Copiar script de validacion
+  ansible.builtin.copy:
+    src: ../../../scripts/zabbix/fase10f_validar_dashboard_mapa_alertas.py
+    dest: /opt/jhalex/zabbix/fase10f_validar_dashboard_mapa_alertas.py
+    mode: '0755'
+  become: true
+
+- name: FASE 10F | Ejecutar script de configuracion visual Zabbix
+  ansible.builtin.command:
+    cmd: python3 /opt/jhalex/zabbix/fase10f_configurar_dashboard_mapa_alertas.py --config /opt/jhalex/zabbix/fase10f_zabbix_api_config.yml
+  register: fase10f_script_result
+  become: true
+
+- name: FASE 10F | Mostrar resultado de configuracion
+  ansible.builtin.debug:
+    var: fase10f_script_result.stdout_lines

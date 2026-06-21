@@ -1,0 +1,22 @@
+zabbix_url: "{{ fase10f_zabbix_url }}"
+zabbix_user: "{{ fase10f_zabbix_user }}"
+zabbix_password: "{{ fase10f_zabbix_password }}"
+
+site_name: "{{ fase10f_site_name }}"
+dashboard_name: "{{ fase10f_dashboard_name }}"
+map_name: "{{ fase10f_map_name }}"
+
+host_groups:
+{% for group in fase10f_host_groups %}
+  - "{{ group }}"
+{% endfor %}
+
+hosts:
+{% for host in fase10f_hosts %}
+  - name: "{{ host.name }}"
+    ip: "{{ host.ip }}"
+    group: "{{ host.group }}"
+    role: "{{ host.role }}"
+    vlan: "{{ host.vlan }}"
+    template_type: "{{ host.template_type }}"
+{% endfor %}

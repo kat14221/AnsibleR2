@@ -1,0 +1,16 @@
+---
+- name: FASE 10F | Validar Dashboard, Mapa y Alertas en Zabbix Lima
+  hosts: mon_zabbix_lima
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: FASE 10F | Ejecutar script de validacion visual Zabbix
+      ansible.builtin.command:
+        cmd: python3 /opt/jhalex/zabbix/fase10f_validar_dashboard_mapa_alertas.py --config /opt/jhalex/zabbix/fase10f_zabbix_api_config.yml
+      register: fase10f_val_result
+      become: true
+
+    - name: FASE 10F | Mostrar resultado de validacion
+      ansible.builtin.debug:
+        var: fase10f_val_result.stdout_lines
