@@ -23,8 +23,8 @@
       ansible.builtin.debug:
         var: val_ip.stdout_lines
 
-    - name: Validar estado del servicio zabbix-agent2 (active)
-      ansible.builtin.command: systemctl is-active zabbix-agent2
+    - name: Validar estado del servicio zabbix-agent2 o zabbix-agent
+      ansible.builtin.shell: systemctl is-active zabbix-agent2 || systemctl is-active zabbix-agent
       register: val_active
       changed_when: false
       
@@ -32,8 +32,8 @@
       ansible.builtin.debug:
         var: val_active.stdout
         
-    - name: Validar habilitacion del servicio zabbix-agent2 (enabled)
-      ansible.builtin.command: systemctl is-enabled zabbix-agent2
+    - name: Validar habilitacion del servicio zabbix-agent2 o zabbix-agent
+      ansible.builtin.shell: systemctl is-enabled zabbix-agent2 || systemctl is-enabled zabbix-agent
       register: val_enabled
       changed_when: false
       
@@ -50,11 +50,11 @@
       ansible.builtin.debug:
         var: val_ports.stdout_lines
         
-    - name: Validar parametros clave en zabbix_agent2.conf
-      ansible.builtin.shell: cat /etc/zabbix/zabbix_agent2.conf | grep -E "^(Server|ServerActive|Hostname|ListenPort)="
+    - name: Validar parametros clave en config
+      ansible.builtin.shell: grep -E "^(Server|ServerActive|Hostname|ListenPort)=" /etc/zabbix/zabbix_agent2.conf /etc/zabbix/zabbix_agentd.conf 2>/dev/null
       register: val_config
       changed_when: false
       
-    - name: Debug parametros zabbix_agent2.conf
+    - name: Debug parametros config
       ansible.builtin.debug:
         var: val_config.stdout_lines

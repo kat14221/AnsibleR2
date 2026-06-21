@@ -1,6 +1,6 @@
 ---
 - name: Restart zabbix-agent2
   ansible.builtin.systemd:
-    name: zabbix-agent2
+    name: "{{ fase10d_agent_service_name | default('zabbix-agent2') }}"
     state: restarted
     enabled: true

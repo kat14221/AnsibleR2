@@ -8,7 +8,17 @@ fase10d_zabbix_target_ip: ""
 
 fase10d_zabbix_major_version: "7.0"
 
+fase10d_ubuntu_codename_by_version:
+  "22.04": "jammy"
+  "24.04": "noble"
+  "26.04": "resolute"
+
+fase10d_zabbix_repo_base_url: "https://repo.zabbix.com/zabbix/7.0/ubuntu"
+fase10d_zabbix_key_url: "https://repo.zabbix.com/zabbix-official-repo.key"
+
 fase10d_zabbix_repo_deb_by_ubuntu:
   "22.04": "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu22.04_all.deb"
   "24.04": "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb"
   "26.04": "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu26.04_all.deb"
+
+fase10d_allow_classic_agent_fallback: true
