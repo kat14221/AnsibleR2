@@ -25,7 +25,23 @@
   changed_when: false
   failed_when: baresip_installed.rc != 0
 
-# 3. Crear usuario de sistema
+# 3. Detectar modulo account.so
+- name: FASE 11C | Buscar modulo account.so de baresip
+  ansible.builtin.shell: |
+    find /usr/lib -path '*baresip*' -name account.so | head -n 1
+  register: fase11c_account_module
+  changed_when: false
+
+- name: FASE 11C | Fallar si no existe account.so
+  ansible.builtin.fail:
+    msg: "No se encontró account.so de baresip. Revisar instalación de baresip."
+  when: fase11c_account_module.stdout | length == 0
+
+- name: FASE 11C | Definir module_path de baresip
+  ansible.builtin.set_fact:
+    fase11c_baresip_module_path: "{{ fase11c_account_module.stdout | dirname }}"
+
+# 4. Crear usuario de sistema
 - name: FASE 11C | Crear usuario {{ fase11c_service_user }}
   ansible.builtin.user:
     name: "{{ fase11c_service_user }}"
@@ -34,7 +50,7 @@
     system: yes
     create_home: yes
 
-# 4. Crear carpeta de config
+# 5. Crear carpeta de config
 - name: FASE 11C | Crear directorio de configuracion .baresip
   ansible.builtin.file:
     path: "{{ fase11c_config_dir }}"
@@ -43,7 +59,7 @@
     group: "{{ fase11c_service_user }}"
     mode: '0750'
 
-# 5 y 6. Templates
+# 6 y 7. Templates
 - name: FASE 11C | Crear archivo de cuenta SIP
   ansible.builtin.template:
     src: accounts.j2
@@ -62,7 +78,7 @@
     mode: '0644'
   notify: Restart baresip
 
-# 7. Crear servicio systemd
+# 8. Crear servicio systemd
 - name: FASE 11C | Crear servicio systemd para baresip
   ansible.builtin.template:
     src: baresip-1002.service.j2
@@ -74,9 +90,10 @@
     - Reload systemd
     - Restart baresip
 
-# 8. Activar servicio
-- name: FASE 11C | Activar e iniciar baresip-1002
+# 9. Reiniciar servicio
+- name: FASE 11C | Reiniciar baresip 1002
   ansible.builtin.systemd:
     name: "{{ fase11c_service_name }}"
-    enabled: yes
-    state: started
+    state: restarted
+    enabled: true
+    daemon_reload: true

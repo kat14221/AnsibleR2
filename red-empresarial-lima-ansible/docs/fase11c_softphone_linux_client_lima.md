@@ -50,7 +50,18 @@ systemctl is-enabled baresip-1002
 journalctl -u baresip-1002 -n 40 --no-pager
 ```
 
-## 7. Evidencia esperada en Asterisk
+## 7. Troubleshooting de tráfico SIP (Opcional)
+Si la extensión no aparece registrada, se puede validar si baresip está enviando los paquetes REGISTER hacia la central capturando el tráfico en PBX-ASTERISK-LIMA:
+```bash
+sudo timeout 25 tcpdump -ni any host 192.168.20.20 and udp port 5060
+```
+Y simultáneamente reiniciar el servicio en CLIENT-LIMA:
+```bash
+sudo systemctl restart baresip-1002
+```
+Debe verse tráfico UDP/5060 desde `192.168.20.20` hacia `192.168.60.10`.
+
+## 8. Evidencia esperada en Asterisk
 La confirmación técnica la hace el playbook `99_validar_pbx_asterisk_fase11c_1002_local.yml`. O si deseas auditar manualmente, desde PBX-ASTERISK-LIMA ejecutar:
 ```bash
 sudo asterisk -rx "pjsip show contacts"
@@ -61,8 +72,8 @@ El resultado esperado es:
 1002/sip:1002@192.168.20.20:xxxxx Avail
 ```
 
-## 8. Limitación
+## 9. Limitación
 Esta implementación establece la configuración técnica mínima estable para mantener el registro SIP activo (señalización). El audio físico (media) no es obligatorio para la validación técnica en este laboratorio.
 
-## 9. Conclusión
+## 10. Conclusión
 El registro SIP 1002 queda validado exitosamente de forma automatizada y persistente.

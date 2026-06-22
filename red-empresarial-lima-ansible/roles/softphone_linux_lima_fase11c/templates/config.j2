@@ -22,16 +22,14 @@ audio_source		aufile,aufile
 audio_alert		aufile,aufile
 
 # Modules
-module_path		/usr/lib/baresip/modules
+module_path		{{ fase11c_baresip_module_path }}
 
-# UI
-module			stdio.so
-module			cons.so
+# SIP core modules
+module			account.so
+module			contact.so
 
 # Audio codec
 module			g711.so
-
-# Audio filter
 
 # Audio driver
 module			aufile.so
