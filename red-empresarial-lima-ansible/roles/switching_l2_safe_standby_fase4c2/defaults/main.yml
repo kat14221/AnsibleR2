@@ -5,3 +5,9 @@ fase4c2_ports_up: []
 fase4c2_ports_down: []
 fase4c2_expected_no_bonds: []
 fase4c2_failover_links: []
+
+fase4c2_failover_watchdog_enabled: true
+fase4c2_failover_watchdog_interval: 5
+fase4c2_failover_failure_threshold: 3
+fase4c2_failover_auto_recover: false
+fase4c2_failover_recovery_threshold: 10

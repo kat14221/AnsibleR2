@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# =============================================================================
+# JHALEX - Link Watchdog (Fase 4C.2)
+# Monitoreo y failover automático
+# =============================================================================
+set -u
+
+# --- Configuracion
+INTERVAL={{ fase4c2_failover_watchdog_interval | default(5) }}
+FAIL_THRESH={{ fase4c2_failover_failure_threshold | default(3) }}
+AUTO_RECOVER="{{ fase4c2_failover_auto_recover | default(false) | string | lower }}"
+RECOVER_THRESH={{ fase4c2_failover_recovery_threshold | default(10) }}
+
+STATE_DIR="/run/jhalex-link-failover"
+LOCK_FILE="/run/lock/jhalex-link-failover.lock"
+
+# Evitar ejecucion concurrente (por si acaso, aunque systemd lo levanta en primer plano)
+exec 200>"$LOCK_FILE"
+if ! flock -n 200; then
+    echo "Ya hay una instancia de jhalex-link-watchdog corriendo."
+    exit 1
+fi
+
+mkdir -p "$STATE_DIR"
+
+declare -A FAIL_COUNT
+declare -A SUCCESS_COUNT
+declare -A CURRENT_STATE
+declare -A RECOVERY_LOGGED
+
+{% for link in fase4c2_failover_links %}
+# Estado inicial para {{ link.name }}
+FAIL_COUNT["{{ link.name }}"]=0
+SUCCESS_COUNT["{{ link.name }}"]=0
+
+if [[ -f "$STATE_DIR/{{ link.name }}.state" ]]; then
+    CURRENT_STATE["{{ link.name }}"]=$(cat "$STATE_DIR/{{ link.name }}.state")
+else
+    CURRENT_STATE["{{ link.name }}"]="primary"
+    echo "primary" > "$STATE_DIR/{{ link.name }}.state"
+fi
+RECOVERY_LOGGED["{{ link.name }}"]="false"
+{% endfor %}
+
+logger -t jhalex-watchdog "Iniciando jhalex-link-watchdog. Intervalo: ${INTERVAL}s. Umbral fail: ${FAIL_THRESH}."
+
+function perform_test() {
+    local link_name=$1
+    
+{% for link in fase4c2_failover_links %}
+    if [[ "$link_name" == "{{ link.name }}" ]]; then
+{% if link.test_method | default('ping') == 'ping' %}
+        if ping -c 1 -W 2 "{{ link.test_target }}" >/dev/null 2>&1; then
+            return 0
+        else
+            return 1
+        fi
+{% elif link.test_method == 'link' %}
+        # Si esta en primary, validar primary. Si esta en backup, el primary no levantará a menos que el cable físico conecte.
+        # En realidad la prueba del primary nos dice si podemos usarlo o no.
+        local primary="{{ link.primary }}"
+        local p_state
+        if [[ -e "/sys/class/net/$primary/operstate" ]]; then
+            p_state=$(cat "/sys/class/net/$primary/operstate")
+            if [[ "$p_state" == "up" ]]; then
+                return 0
+            fi
+        fi
+        
+        # En test_method=link, si el primary esta administrativamente UP pero físicamente DOWN, fallara.
+        # Si esta administrativamente DOWN (por haber hecho backup manual/auto), su operstate sera down.
+        # Para que el watchdog sepa que el cable primario murio, asumimos que si el state no es 'up', falló.
+        return 1
+{% else %}
+        return 0
+{% endif %}
+    fi
+{% endfor %}
+    return 1
+}
+
+while true; do
+{% for link in fase4c2_failover_links %}
+    # Monitoreo para: {{ link.name }}
+    state="${CURRENT_STATE["{{ link.name }}"]}"
+    
+    if perform_test "{{ link.name }}"; then
+        # TEST EXITOSO (Link primario responde)
+        FAIL_COUNT["{{ link.name }}"]=0
+        SUCCESS_COUNT["{{ link.name }}"]=$((SUCCESS_COUNT["{{ link.name }}"] + 1))
+        
+        if [[ "$state" == "backup" ]]; then
+            if [[ "$AUTO_RECOVER" == "true" ]]; then
+                if [[ ${SUCCESS_COUNT["{{ link.name }}"]} -ge $RECOVER_THRESH ]]; then
+                    logger -t jhalex-watchdog "[{{ link.name }}] El enlace primario se ha recuperado (${SUCCESS_COUNT["{{ link.name }}"]} veces OK). Ejecutando FAILBACK."
+                    /usr/local/sbin/jhalex-link-failover primary "{{ link.name }}"
+                    CURRENT_STATE["{{ link.name }}"]="primary"
+                    echo "primary" > "$STATE_DIR/{{ link.name }}.state"
+                    SUCCESS_COUNT["{{ link.name }}"]=0
+                    RECOVERY_LOGGED["{{ link.name }}"]="false"
+                fi
+            else
+                if [[ "${RECOVERY_LOGGED["{{ link.name }}"]}" == "false" ]]; then
+                    logger -t jhalex-watchdog "[{{ link.name }}] Enlace primario detectado como UP, pero auto_recover=false. Manteniendo backup."
+                    RECOVERY_LOGGED["{{ link.name }}"]="true"
+                fi
+            fi
+        fi
+    else
+        # TEST FALLIDO (Link primario no responde)
+        SUCCESS_COUNT["{{ link.name }}"]=0
+        FAIL_COUNT["{{ link.name }}"]=$((FAIL_COUNT["{{ link.name }}"] + 1))
+        RECOVERY_LOGGED["{{ link.name }}"]="false"
+        
+        if [[ "$state" == "primary" ]]; then
+            if [[ ${FAIL_COUNT["{{ link.name }}"]} -ge $FAIL_THRESH ]]; then
+                logger -t jhalex-watchdog "[{{ link.name }}] FALLO CRITICO DETECTADO (${FAIL_COUNT["{{ link.name }}"]} veces DOWN). Ejecutando FAILOVER a backup."
+                /usr/local/sbin/jhalex-link-failover backup "{{ link.name }}"
+                CURRENT_STATE["{{ link.name }}"]="backup"
+                echo "backup" > "$STATE_DIR/{{ link.name }}.state"
+                FAIL_COUNT["{{ link.name }}"]=0
+            fi
+        fi
+    fi
+{% endfor %}
+
+    sleep "$INTERVAL"
+done

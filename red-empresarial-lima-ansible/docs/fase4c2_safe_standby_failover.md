@@ -57,6 +57,31 @@ sudo jhalex-link-failover primary <link_name>    # Revierte el failover para usa
 La topología L2 resultante a partir de esta fase se considera libre de bucles, segura y redundante (manual).
 El próximo paso arquitectónico es la **Fase 5 (VRRP)**, la cual introducirá redundancia activa-activa en el enrutamiento Capa 3 para las subredes VLAN, explotando estos caminos L2 de forma segura.
 
+## 4.5 Prueba de conmutación automática en SWCORE
+Se ha implementado el servicio automático `jhalex-link-watchdog.service` para detectar caídas y ejecutar la conmutación al enlace secundario sin intervención humana. El watchdog respeta la regla de pares: se ejecuta de forma paralela y autónoma en ambos extremos de un enlace crítico, detectando localmente la caída e invocando a `jhalex-link-failover`.
+
+**Procedimiento de prueba:**
+1. Validar que el servicio está activo:
+   ```bash
+   sudo systemctl status jhalex-link-watchdog
+   ```
+2. Observar el enlace actual (ej. Core1-Core2):
+   ```bash
+   sudo jhalex-link-failover status
+   ```
+3. Simular la caída de la interfaz primaria (`ens36`) en SWCORELIM1:
+   ```bash
+   sudo ip link set ens36 down
+   ```
+4. Ver los logs del watchdog detectando el fallo y ejecutando la conmutación a backup:
+   ```bash
+   sudo journalctl -u jhalex-link-watchdog -f
+   ```
+5. Comprobar que ahora `ens37` está UP y cursando tráfico:
+   ```bash
+   sudo jhalex-link-failover status
+   ```
+
 ## Rollback
 Si se desea eliminar la Fase 4C.2:
 ```bash

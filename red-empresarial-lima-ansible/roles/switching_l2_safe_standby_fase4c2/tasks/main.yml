@@ -53,13 +53,41 @@
     mode: '0755'
   tags: systemd
 
-- name: "FASE4C2 SYSTEMD | Instalar script de failover manual"
+- name: "FASE 4C.2 | Generar script jhalex-link-failover"
   ansible.builtin.template:
     src: jhalex-link-failover.sh.j2
     dest: /usr/local/sbin/jhalex-link-failover
+    mode: '0755'
+    owner: root
+
+- name: "FASE 4C.2 | Crear directorio de estado para watchdog"
+  ansible.builtin.file:
+    path: /run/jhalex-link-failover
+    state: directory
     owner: root
     group: root
     mode: '0755'
+
+- name: "FASE 4C.2 | Generar script jhalex-link-watchdog"
+  ansible.builtin.template:
+    src: jhalex-link-watchdog.sh.j2
+    dest: /usr/local/sbin/jhalex-link-watchdog
+    mode: '0755'
+    owner: root
+
+- name: "FASE 4C.2 | Generar servicio jhalex-link-watchdog"
+  ansible.builtin.template:
+    src: jhalex-link-watchdog.service.j2
+    dest: /etc/systemd/system/jhalex-link-watchdog.service
+    mode: '0644'
+  notify:
+    - Reload systemd para Fase 4C.2
+
+- name: "FASE 4C.2 | Habilitar e iniciar watchdog"
+  ansible.builtin.systemd:
+    name: jhalex-link-watchdog
+    enabled: "{{ fase4c2_failover_watchdog_enabled | default(false) }}"
+    state: "{{ 'started' if fase4c2_failover_watchdog_enabled | default(false) else 'stopped' }}"
   tags: systemd
 
 - name: "FASE4C2 SYSTEMD | Crear servicio systemd"
